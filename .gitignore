@@ -1,0 +1,8 @@
+# SQL dumps
+wp_postmeta.sql
+wp_posts.sql
+
+# seniorsatwork-matching: virtual env and secrets
+seniorsatwork-matching/.venv/
+seniorsatwork-matching/venv/
+seniorsatwork-matching/.env

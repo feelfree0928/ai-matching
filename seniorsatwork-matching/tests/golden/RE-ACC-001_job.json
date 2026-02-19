@@ -1,0 +1,15 @@
+{
+  "title": "Senior Real Estate Accountant",
+  "description": "Accounting for real estate portfolios (commercial & residential). Property-level financial reporting. Service charge / ancillary cost accounting (Nebenkosten). Monthly & annual closings. Coordination with property managers and asset managers. Preparation of financial statements. Audit support.",
+  "required_skills": "Real Estate Accountant or Property Accountant. Financial accounting. Property portfolios. IFRS or Swiss GAAP FER. German B2+. Accounting software (Abacus, SAP, Yardi, MRI). Excel advanced. Financial reporting. Closing processes.",
+  "required_education": "Bachelor/Master in Accounting, Finance, Business Administration. Federal Diploma in Accounting (Fachausweis Finanz- und Rechnungswesen). CPA or equivalent.",
+  "industry": "Real Estate / Property Management",
+  "expected_seniority_level": "senior",
+  "location_lat": 47.3769,
+  "location_lon": 8.5417,
+  "radius_km": 50,
+  "pensum_min": 0,
+  "pensum_max": 100,
+  "required_languages": [{"name": "German", "min_level": "B2"}],
+  "max_results": 20
+}

@@ -1,0 +1,176 @@
+[
+  {
+    "candidate_id": "C04",
+    "post_id": 10004,
+    "work_experiences": [
+      {"raw_title": "Senior Real Estate Accountant", "standardized_title": "Senior Real Estate Accountant", "industry": "Real Estate Asset Management", "start_year": 2020, "end_year": 2025, "years_in_role": 5, "recency_weight": 1.0, "weighted_years": 5.0},
+      {"raw_title": "Property Accountant", "standardized_title": "Property Accountant", "industry": "Real Estate Asset Management", "start_year": 2016, "end_year": 2020, "years_in_role": 4, "recency_weight": 0.84, "weighted_years": 3.36}
+    ],
+    "skills_text": "Abacus advanced. SAP RE-FX. Financial reporting. Service charge accounting. IFRS & Swiss GAAP FER.",
+    "education_text": "Federal Diploma in Accounting. BSc Business Administration.",
+    "languages": [{"lang": "German", "degree": "Mother tongue"}, {"lang": "English", "degree": "Fluent"}],
+    "location": {"lat": 47.37, "lon": 8.54, "address": "Zurich"},
+    "work_radius_km": 50,
+    "pensum_desired": 100,
+    "pensum_from": 0,
+    "seniority_level": "senior",
+    "total_weighted_relevant_years": 8.36,
+    "aggregated_industry_parts": [["Real Estate Asset Management", 5.0], ["Real Estate Asset Management", 3.36]]
+  },
+  {
+    "candidate_id": "C01",
+    "post_id": 10001,
+    "work_experiences": [
+      {"raw_title": "Real Estate Accountant", "standardized_title": "Real Estate Accountant", "industry": "Property Management", "start_year": 2019, "end_year": 2025, "years_in_role": 6, "recency_weight": 1.0, "weighted_years": 6.0},
+      {"raw_title": "Junior Accountant", "standardized_title": "Junior Accountant", "industry": "Property Management", "start_year": 2016, "end_year": 2019, "years_in_role": 3, "recency_weight": 0.84, "weighted_years": 2.52}
+    ],
+    "skills_text": "Yardi advanced. Excel advanced. Closing processes. Tenant accounting.",
+    "education_text": "BSc Accounting.",
+    "languages": [{"lang": "German", "degree": "Fluent"}],
+    "location": {"lat": 47.35, "lon": 8.55, "address": "Zurich"},
+    "work_radius_km": 50,
+    "pensum_desired": 100,
+    "pensum_from": 0,
+    "seniority_level": "mid",
+    "total_weighted_relevant_years": 8.52,
+    "aggregated_industry_parts": [["Property Management", 6.0], ["Property Management", 2.52]]
+  },
+  {
+    "candidate_id": "C09",
+    "post_id": 10009,
+    "work_experiences": [
+      {"raw_title": "Property Accountant", "standardized_title": "Property Accountant", "industry": "Real Estate", "start_year": 2021, "end_year": 2025, "years_in_role": 4, "recency_weight": 1.0, "weighted_years": 4.0},
+      {"raw_title": "Financial Accountant", "standardized_title": "Financial Accountant", "industry": "Corporate Accounting", "start_year": 2016, "end_year": 2021, "years_in_role": 5, "recency_weight": 0.84, "weighted_years": 4.2}
+    ],
+    "skills_text": "SAP FI. Reporting. IFRS. Portfolio accounting.",
+    "education_text": "MSc Finance.",
+    "languages": [{"lang": "German", "degree": "Fluent"}],
+    "location": {"lat": 47.36, "lon": 8.52, "address": "Zurich"},
+    "work_radius_km": 50,
+    "pensum_desired": 80,
+    "pensum_from": 60,
+    "seniority_level": "mid",
+    "total_weighted_relevant_years": 8.2,
+    "aggregated_industry_parts": [["Real Estate", 4.0], ["Corporate Accounting", 4.2]]
+  },
+  {
+    "candidate_id": "C02",
+    "post_id": 10002,
+    "work_experiences": [
+      {"raw_title": "Senior Accountant", "standardized_title": "Senior Accountant", "industry": "Real Estate Investment", "start_year": 2018, "end_year": 2025, "years_in_role": 7, "recency_weight": 1.0, "weighted_years": 7.0}
+    ],
+    "skills_text": "SAP FI. Excel advanced. Annual closing.",
+    "education_text": "Federal Accounting Certificate.",
+    "languages": [{"lang": "German", "degree": "Mother tongue"}],
+    "location": {"lat": 47.38, "lon": 8.53, "address": "Zurich"},
+    "work_radius_km": 50,
+    "pensum_desired": 100,
+    "pensum_from": 0,
+    "seniority_level": "senior",
+    "total_weighted_relevant_years": 7.0,
+    "aggregated_industry_parts": [["Real Estate Investment", 7.0]]
+  },
+  {
+    "candidate_id": "C06",
+    "post_id": 10006,
+    "work_experiences": [
+      {"raw_title": "Financial Accountant", "standardized_title": "Financial Accountant", "industry": "Real Estate Development", "start_year": 2016, "end_year": 2024, "years_in_role": 8, "recency_weight": 0.92, "weighted_years": 7.36}
+    ],
+    "skills_text": "Abacus. Reporting. Closing.",
+    "education_text": "BSc Finance.",
+    "languages": [{"lang": "German", "degree": "Fluent"}],
+    "location": {"lat": 47.34, "lon": 8.56, "address": "Zurich"},
+    "work_radius_km": 50,
+    "pensum_desired": 80,
+    "pensum_from": 0,
+    "seniority_level": "mid",
+    "total_weighted_relevant_years": 7.36,
+    "aggregated_industry_parts": [["Real Estate Development", 7.36]]
+  },
+  {
+    "candidate_id": "C03",
+    "post_id": 10003,
+    "work_experiences": [
+      {"raw_title": "Accountant", "standardized_title": "Accountant", "industry": "Insurance", "start_year": 2014, "end_year": 2024, "years_in_role": 10, "recency_weight": 0.92, "weighted_years": 9.2}
+    ],
+    "skills_text": "SAP. IFRS. Reporting.",
+    "education_text": "BSc Accounting.",
+    "languages": [{"lang": "German", "degree": "Fluent"}],
+    "location": {"lat": 47.37, "lon": 8.54, "address": "Zurich"},
+    "work_radius_km": 50,
+    "pensum_desired": 100,
+    "pensum_from": 0,
+    "seniority_level": "mid",
+    "total_weighted_relevant_years": 9.2,
+    "aggregated_industry_parts": [["Insurance", 9.2]]
+  },
+  {
+    "candidate_id": "C08",
+    "post_id": 10008,
+    "work_experiences": [
+      {"raw_title": "Junior Real Estate Accountant", "standardized_title": "Junior Real Estate Accountant", "industry": "Property Management", "start_year": 2023, "end_year": 2025, "years_in_role": 2, "recency_weight": 1.0, "weighted_years": 2.0},
+      {"raw_title": "Accounting Assistant", "standardized_title": "Accounting Assistant", "industry": "Property Management", "start_year": 2020, "end_year": 2023, "years_in_role": 3, "recency_weight": 0.88, "weighted_years": 2.64}
+    ],
+    "skills_text": "Abacus basic. Excel intermediate.",
+    "education_text": "Commercial Diploma.",
+    "languages": [{"lang": "German", "degree": "Mother tongue"}],
+    "location": {"lat": 47.35, "lon": 8.55, "address": "Zurich"},
+    "work_radius_km": 50,
+    "pensum_desired": 100,
+    "pensum_from": 0,
+    "seniority_level": "junior",
+    "total_weighted_relevant_years": 4.64,
+    "aggregated_industry_parts": [["Property Management", 2.0], ["Property Management", 2.64]]
+  },
+  {
+    "candidate_id": "C05",
+    "post_id": 10005,
+    "work_experiences": [
+      {"raw_title": "Accounting Manager", "standardized_title": "Accounting Manager", "industry": "Retail", "start_year": 2018, "end_year": 2024, "years_in_role": 6, "recency_weight": 0.92, "weighted_years": 5.52}
+    ],
+    "skills_text": "SAP. Leadership. Reporting.",
+    "education_text": "MBA Finance.",
+    "languages": [{"lang": "German", "degree": "Fluent"}],
+    "location": {"lat": 47.39, "lon": 8.52, "address": "Zurich"},
+    "work_radius_km": 50,
+    "pensum_desired": 100,
+    "pensum_from": 0,
+    "seniority_level": "manager",
+    "total_weighted_relevant_years": 5.52,
+    "aggregated_industry_parts": [["Retail", 5.52]]
+  },
+  {
+    "candidate_id": "C10",
+    "post_id": 10010,
+    "work_experiences": [
+      {"raw_title": "Accounts Payable Specialist", "standardized_title": "Accounts Payable Specialist", "industry": "Logistics", "start_year": 2017, "end_year": 2024, "years_in_role": 7, "recency_weight": 0.92, "weighted_years": 6.44}
+    ],
+    "skills_text": "Invoice processing. SAP.",
+    "education_text": "Commercial training.",
+    "languages": [{"lang": "German", "degree": "Fluent"}],
+    "location": {"lat": 47.37, "lon": 8.54, "address": "Zurich"},
+    "work_radius_km": 50,
+    "pensum_desired": 80,
+    "pensum_from": 0,
+    "seniority_level": "mid",
+    "total_weighted_relevant_years": 6.44,
+    "aggregated_industry_parts": [["Logistics", 6.44]]
+  },
+  {
+    "candidate_id": "C07",
+    "post_id": 10007,
+    "work_experiences": [
+      {"raw_title": "Controller", "standardized_title": "Controller", "industry": "Manufacturing", "start_year": 2016, "end_year": 2024, "years_in_role": 8, "recency_weight": 0.92, "weighted_years": 7.36}
+    ],
+    "skills_text": "Budgeting. Forecasting.",
+    "education_text": "BSc Business.",
+    "languages": [{"lang": "German", "degree": "Fluent"}],
+    "location": {"lat": 47.36, "lon": 8.53, "address": "Zurich"},
+    "work_radius_km": 50,
+    "pensum_desired": 100,
+    "pensum_from": 0,
+    "seniority_level": "mid",
+    "total_weighted_relevant_years": 7.36,
+    "aggregated_industry_parts": [["Manufacturing", 7.36]]
+  }
+]
