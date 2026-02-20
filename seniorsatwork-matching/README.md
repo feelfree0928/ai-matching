@@ -194,6 +194,13 @@ python scripts/incremental_sync.py
   python scripts/incremental_sync.py
   ```
 
+- **Full reset and re-embed** (e.g. after stopping initial_load partway, or to clear all caches)
+  Removes the embedding cache, title-mapping cache, and the Elasticsearch candidates/job_postings indices so the next `initial_load.py` runs from scratch.
+  ```bash
+  python scripts/reset_caches_and_index.py
+  python scripts/initial_load.py
+  ```
+
 ## API Endpoints
 
 | Method | Path | Description |
