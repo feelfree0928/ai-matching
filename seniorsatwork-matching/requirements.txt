@@ -8,8 +8,8 @@ uvicorn[standard]>=0.27.0
 # Database
 PyMySQL>=1.1.0
 
-# Elasticsearch
-elasticsearch>=8.12.0
+# Elasticsearch – pin to 8.x; the 9.x client sends compatible-with=9 headers rejected by ES 8.x servers
+elasticsearch>=8.12.0,<9.0.0
 
 # ETL & parsing
 phpserialize>=1.3
