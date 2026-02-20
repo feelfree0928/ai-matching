@@ -73,7 +73,18 @@ def main() -> None:
 
     client = OpenAI()
     es = get_es_client()
-    ensure_indices(es)
+    try:
+        ensure_indices(es)
+    except Exception as e:
+        err_type = type(e).__name__
+        print(f"Elasticsearch connection failed ({err_type}): {e}")
+        print()
+        print("Check:")
+        print("  1. Elasticsearch is running (e.g. sudo systemctl status elasticsearch)")
+        print("  2. ELASTICSEARCH_URL in .env is correct (e.g. http://localhost:9200)")
+        print("  3. From this host: curl " + os.getenv("ELASTICSEARCH_URL", "http://localhost:9200"))
+        print("  4. If using Elasticsearch 8.x with security, use https and set ELASTICSEARCH_USER / ELASTICSEARCH_PASSWORD")
+        sys.exit(1)
 
     processed = []
     skipped_no_location = 0

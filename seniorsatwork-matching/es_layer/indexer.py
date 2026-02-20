@@ -22,7 +22,12 @@ def get_es_client(url: str | None = None) -> Elasticsearch:
     from dotenv import load_dotenv
     load_dotenv()
     u = url or os.getenv("ELASTICSEARCH_URL", "http://localhost:9200")
-    return Elasticsearch(u)
+    kwargs = {"request_timeout": 60}
+    user = os.getenv("ELASTICSEARCH_USER")
+    password = os.getenv("ELASTICSEARCH_PASSWORD")
+    if user and password:
+        kwargs["basic_auth"] = (user, password)
+    return Elasticsearch(u, **kwargs)
 
 
 def ensure_indices(es: Elasticsearch) -> None:
