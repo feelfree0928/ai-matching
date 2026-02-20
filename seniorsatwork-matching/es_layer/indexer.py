@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Any, Iterator
 
 from elasticsearch import Elasticsearch, helpers
+from elasticsearch.exceptions import NotFoundError
 
 from .mappings import (
     CANDIDATES_INDEX,
@@ -35,10 +36,17 @@ def get_es_client(url: str | None = None) -> Elasticsearch:
 
 
 def ensure_indices(es: Elasticsearch) -> None:
-    if not es.indices.exists(index=CANDIDATES_INDEX):
-        es.indices.create(index=CANDIDATES_INDEX, mappings=CANDIDATES_MAPPING)
-    if not es.indices.exists(index=JOBS_INDEX):
-        es.indices.create(index=JOBS_INDEX, mappings=JOBS_MAPPING)
+    """Create candidates and job_postings indices if they do not exist.
+    Uses GET (indices.get) instead of HEAD (indices.exists) to avoid 400 with no body on some ES 8.x setups.
+    """
+    for index_name, mapping in [
+        (CANDIDATES_INDEX, CANDIDATES_MAPPING),
+        (JOBS_INDEX, JOBS_MAPPING),
+    ]:
+        try:
+            es.indices.get(index=index_name)
+        except NotFoundError:
+            es.indices.create(index=index_name, mappings=mapping)
 
 
 def _ensure_nonzero_vector(vec: list[float] | None, dims: int = DENSE_DIMS) -> list[float] | None:
