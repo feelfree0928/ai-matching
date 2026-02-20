@@ -141,6 +141,7 @@ Edit `.env` and set at least:
 - `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASS`, `DB_NAME` (WordPress/MariaDB)
 - `ELASTICSEARCH_URL=http://localhost:9200` (use `https://...` for ES 8.x with security)
 - `ELASTICSEARCH_USER` and `ELASTICSEARCH_PASSWORD` (optional; required if ES 8.x has security enabled)
+- `ELASTICSEARCH_VERIFY_CERTS=false` (optional; use only for local ES 8.x with self-signed cert—not for production)
 - `OPENAI_API_KEY=sk-...`
 
 **6. Standardized titles**
@@ -225,6 +226,14 @@ Default minimum score: 55/100. Candidates below this are excluded. Adjust via `P
 - Ensure Elasticsearch is running: `sudo systemctl status elasticsearch` (Linux) or check your ES process.
 - Test from the same machine: `curl http://localhost:9200` (or the URL in `ELASTICSEARCH_URL`). You should get JSON with `version.number`.
 - If using Elasticsearch 8.x with security enabled, set `ELASTICSEARCH_URL=https://localhost:9200` and set `ELASTICSEARCH_USER` and `ELASTICSEARCH_PASSWORD` in `.env` (e.g. user `elastic` and the password printed at first start or reset with `bin/elasticsearch-reset-password -u elastic`).
+
+**"SSL: CERTIFICATE_VERIFY_FAILED" / "self-signed certificate in certificate chain"**
+
+- Elasticsearch 8.x uses a self-signed certificate by default. For local/dev, you can skip verification by adding to `.env`:
+  ```bash
+  ELASTICSEARCH_VERIFY_CERTS=false
+  ```
+- **Do not use `ELASTICSEARCH_VERIFY_CERTS=false` in production.** For production, use proper CA certificates or `ssl_assert_fingerprint`.
 
 ## Testing
 

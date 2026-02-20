@@ -27,6 +27,10 @@ def get_es_client(url: str | None = None) -> Elasticsearch:
     password = os.getenv("ELASTICSEARCH_PASSWORD")
     if user and password:
         kwargs["basic_auth"] = (user, password)
+    # Allow skipping SSL verification for ES 8.x default self-signed cert (dev only)
+    verify = os.getenv("ELASTICSEARCH_VERIFY_CERTS", "true").strip().lower()
+    if verify in ("false", "0", "no"):
+        kwargs["verify_certs"] = False
     return Elasticsearch(u, **kwargs)
 
 
