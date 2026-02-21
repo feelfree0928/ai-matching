@@ -3,6 +3,7 @@ Bulk index helpers for candidates and job postings.
 """
 from __future__ import annotations
 
+import warnings
 from typing import Any, Iterator
 
 from elasticsearch import Elasticsearch, helpers
@@ -32,6 +33,21 @@ def get_es_client(url: str | None = None) -> Elasticsearch:
     verify = os.getenv("ELASTICSEARCH_VERIFY_CERTS", "true").strip().lower()
     if verify in ("false", "0", "no"):
         kwargs["verify_certs"] = False
+        # Suppress TLS warnings when user explicitly disabled verification
+        try:
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        except Exception:
+            pass
+        warnings.filterwarnings(
+            "ignore",
+            message=".*verify_certs.*",
+            category=warnings.SecurityWarning,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message=".*Unverified HTTPS request.*",
+        )
     return Elasticsearch(u, **kwargs)
 
 
