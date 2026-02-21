@@ -39,15 +39,8 @@ def get_es_client(url: str | None = None) -> Elasticsearch:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         except Exception:
             pass
-        warnings.filterwarnings(
-            "ignore",
-            message=".*verify_certs.*",
-            category=warnings.SecurityWarning,
-        )
-        warnings.filterwarnings(
-            "ignore",
-            message=".*Unverified HTTPS request.*",
-        )
+        warnings.filterwarnings("ignore", message=".*verify_certs.*")
+        warnings.filterwarnings("ignore", message=".*Unverified HTTPS request.*")
     return Elasticsearch(u, **kwargs)
 
 
