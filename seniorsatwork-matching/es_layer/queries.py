@@ -18,6 +18,7 @@ def build_hard_filters(
 ) -> list[dict]:
     """Build filter context list for geo, pensum, languages."""
     filters = [
+        {"exists": {"field": "location"}},
         {
             "geo_distance": {
                 "distance": f"{radius_km}km",

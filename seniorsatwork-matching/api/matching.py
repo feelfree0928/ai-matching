@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Any
 
 from elasticsearch import Elasticsearch
+from elasticsearch.exceptions import BadRequestError
 from es_layer.indexer import get_es_client
 from es_layer.mappings import CANDIDATES_INDEX, SENIORITY_TO_INT
 from es_layer.queries import build_hard_filters, build_script_score
@@ -80,6 +81,26 @@ def run_match(
             },
             min_score=effective_min_score,
             size=max_results,
+        )
+    except BadRequestError as e:
+        detail = str(e)
+        try:
+            body = getattr(e, "body", None) or getattr(e, "info", None) or {}
+            if isinstance(body, dict) and "error" in body:
+                err = body["error"]
+                root = (err.get("root_cause") or [{}])[0]
+                reason = root.get("reason") or err.get("reason") or detail
+                script_stack = root.get("script_stack")
+                if script_stack:
+                    detail = f"{reason} (script: {script_stack})"
+                else:
+                    detail = reason
+        except Exception:
+            pass
+        return MatchResponse(
+            matches=[],
+            message=f"Search failed: {detail}",
+            total_above_threshold=0,
         )
     except Exception as e:
         return MatchResponse(
