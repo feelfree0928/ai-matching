@@ -88,12 +88,13 @@ def build_script_score(
     return {
         "script": {
             "source": """
-                double titleSim = cosineSimilarity(params.titleVec, 'aggregated_title_embedding') + 1.0;
-                double industrySim = cosineSimilarity(params.industryVec, 'aggregated_industry_embedding') + 1.0;
-                double skillsSim = cosineSimilarity(params.skillsVec, 'skills_embedding') + 1.0;
-                double eduSim = cosineSimilarity(params.eduVec, 'education_embedding') + 1.0;
-                double expScore = 2.0 / (1.0 + Math.exp(-0.2 * doc['total_weighted_relevant_years'].value));
-                int candLvl = doc['seniority_level_int'].value;
+                double titleSim = doc['aggregated_title_embedding'].size() == 0 ? 1.0 : cosineSimilarity(params.titleVec, 'aggregated_title_embedding') + 1.0;
+                double industrySim = doc['aggregated_industry_embedding'].size() == 0 ? 1.0 : cosineSimilarity(params.industryVec, 'aggregated_industry_embedding') + 1.0;
+                double skillsSim = doc['skills_embedding'].size() == 0 ? 1.0 : cosineSimilarity(params.skillsVec, 'skills_embedding') + 1.0;
+                double eduSim = doc['education_embedding'].size() == 0 ? 1.0 : cosineSimilarity(params.eduVec, 'education_embedding') + 1.0;
+                double years = doc['total_weighted_relevant_years'].size() > 0 ? doc['total_weighted_relevant_years'].value : 0.0;
+                double expScore = 2.0 / (1.0 + Math.exp(-0.2 * years));
+                int candLvl = doc['seniority_level_int'].size() > 0 ? doc['seniority_level_int'].value : params.jobLvl;
                 int jobLvl = params.jobLvl;
                 double seniorityFit = Math.max(0.5, 1.0 - 0.15 * Math.abs(candLvl - jobLvl));
                 return (params.wT * titleSim) + (params.wI * industrySim) + (params.wE * expScore)

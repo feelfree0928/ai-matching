@@ -2,6 +2,9 @@
 wp_postmeta.sql
 wp_posts.sql
 
+# Frontend (local only – not committed)
+frontend/
+
 # seniorsatwork-matching: virtual env and secrets
 seniorsatwork-matching/.venv/
 seniorsatwork-matching/venv/
