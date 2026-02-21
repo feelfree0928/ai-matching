@@ -95,8 +95,8 @@ def build_script_score(
                 double eduSim = doc['education_embedding'].size() == 0 ? 1.0 : cosineSimilarity(params.eduVec, 'education_embedding') + 1.0;
                 double years = doc['total_weighted_relevant_years'].size() > 0 ? doc['total_weighted_relevant_years'].value : 0.0;
                 double expScore = 2.0 / (1.0 + Math.exp(-0.2 * years));
-                int candLvl = doc['seniority_level_int'].size() > 0 ? doc['seniority_level_int'].value : params.jobLvl;
-                int jobLvl = params.jobLvl;
+                def candLvl = doc['seniority_level_int'].size() > 0 ? doc['seniority_level_int'].value : params.jobLvl;
+                def jobLvl = params.jobLvl;
                 double seniorityFit = Math.max(0.5, 1.0 - 0.15 * Math.abs(candLvl - jobLvl));
                 return (params.wT * titleSim) + (params.wI * industrySim) + (params.wE * expScore)
                      + (params.wS * skillsSim) + (params.wSen * seniorityFit * 2.0) + (params.wEdu * eduSim);
