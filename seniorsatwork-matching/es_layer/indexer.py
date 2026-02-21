@@ -58,6 +58,19 @@ def ensure_indices(es: Elasticsearch) -> None:
             es.indices.create(index=index_name, mappings=mapping)
 
 
+def _sanitize_post_modified(val: Any) -> str | None:
+    """Return ES-parseable date string or None. WordPress uses 0000-00-00 00:00:00 for invalid dates."""
+    if val is None:
+        return None
+    if hasattr(val, "isoformat"):  # datetime
+        return val.isoformat()
+    s = str(val).strip()
+    if not s or s.startswith("0000-00-00"):
+        return None
+    # ES accepts ISO and common formats; pass through valid-looking dates
+    return s.replace(" ", "T", 1) if " " in s and len(s) > 10 else s
+
+
 def _ensure_nonzero_vector(vec: list[float] | None, dims: int = DENSE_DIMS) -> list[float] | None:
     """Return vec if it has non-zero magnitude; else a unit vector so cosine similarity works."""
     if not vec or len(vec) != dims:
@@ -91,7 +104,7 @@ def _candidate_doc(c: dict[str, Any]) -> dict[str, Any]:
 
     doc = {
         "post_id": c["post_id"],
-        "post_modified": c.get("post_modified"),
+        "post_modified": _sanitize_post_modified(c.get("post_modified")),
         "location": {"lat": lat, "lon": lon} if lat is not None and lon is not None else None,
         "address": (loc.get("address") or "").strip() or None,
         "work_radius_km": c.get("work_radius_km", 50),
@@ -179,7 +192,7 @@ def _job_doc(j: dict[str, Any]) -> dict[str, Any]:
     lat, lon = loc.get("lat"), loc.get("lon")
     return {
         "post_id": j.get("post_id"),
-        "post_modified": j.get("post_modified"),
+        "post_modified": _sanitize_post_modified(j.get("post_modified")),
         "title": j.get("title", ""),
         "standardized_title": j.get("standardized_title", ""),
         "title_embedding": j.get("title_embedding"),
