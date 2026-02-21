@@ -4,11 +4,15 @@ Transform raw WordPress resume/job data: PHP deserialize, HTML strip, parse work
 from __future__ import annotations
 
 import re
+import warnings
 from functools import lru_cache
 from typing import Any
 
 import phpserialize
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, MarkupResemblesLocatorWarning
+
+# Resume fields sometimes look like URLs; we intentionally parse them as HTML.
+warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
 
 # Seniority levels (order matters for level index 0-5)
 SENIORITY_LEVELS = ["junior", "mid", "senior", "manager", "director", "executive"]
