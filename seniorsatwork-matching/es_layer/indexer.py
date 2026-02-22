@@ -18,6 +18,24 @@ from .mappings import (
     SENIORITY_TO_INT,
 )
 
+# CEFR / WP degree to integer for language_level_max (1-7, 0 = none)
+LANGUAGE_DEGREE_TO_INT = {
+    "A1": 1, "A2": 2, "B1": 3, "B2": 4, "C1": 5, "C2": 6,
+    "Mother tongue": 7, "Fluent": 6, "Intermediate": 4,
+}
+
+
+def _language_level_max(languages: list[dict[str, Any]]) -> int:
+    """Highest language level across all languages (for ranking)."""
+    if not languages:
+        return 0
+    levels = []
+    for lang in languages:
+        degree = (lang.get("degree") or "").strip()
+        if degree:
+            levels.append(LANGUAGE_DEGREE_TO_INT.get(degree, 0))
+    return max(levels, default=0)
+
 
 def get_es_client(url: str | None = None) -> Elasticsearch:
     import os
@@ -110,10 +128,12 @@ def _candidate_doc(c: dict[str, Any]) -> dict[str, Any]:
         "work_radius_km": c.get("work_radius_km", 50),
         "pensum_desired": c.get("pensum_desired", 100),
         "pensum_from": c.get("pensum_from", 0),
+        "available_from": c.get("available_from"),
         "on_contract_basis": c.get("on_contract_basis", False),
         "languages": c.get("languages") or [],
         "seniority_level": c.get("seniority_level", "mid"),
         "seniority_level_int": SENIORITY_TO_INT.get(c.get("seniority_level", "mid"), 1),
+        "language_level_max": _language_level_max(c.get("languages") or []),
         "work_experiences": work_experiences,
         "aggregated_title_embedding": _ensure_nonzero_vector(c.get("aggregated_title_embedding")),
         "aggregated_industry_embedding": _ensure_nonzero_vector(c.get("aggregated_industry_embedding")),

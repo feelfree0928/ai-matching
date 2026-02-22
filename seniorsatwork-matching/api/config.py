@@ -9,12 +9,13 @@ import os
 CONFIG_PATH = os.getenv("CONFIG_PATH", os.path.join(os.path.dirname(__file__), "..", "config.json"))
 
 DEFAULT_WEIGHTS = {
-    "title": 0.40,
-    "industry": 0.20,
-    "experience": 0.15,
+    "title": 0.38,
+    "industry": 0.19,
+    "experience": 0.14,
     "skills": 0.10,
-    "seniority": 0.08,
+    "seniority": 0.07,
     "education": 0.07,
+    "language": 0.05,
 }
 
 # Raw score threshold (on script_score scale ~0..2). 1.55 ≈ 55/100 normalized.

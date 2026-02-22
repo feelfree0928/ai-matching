@@ -57,6 +57,7 @@ def run_match(
         pensum_min=req.pensum_min,
         pensum_max=req.pensum_max,
         required_languages=[{"name": l.name, "min_level": l.min_level} for l in req.required_languages],
+        required_available_before=req.required_available_before,
     )
 
     script = build_script_score(
@@ -126,12 +127,13 @@ def run_match(
         w = weights
         breakdown = ScoreBreakdown(
             total=round(total_norm, 1),
-            title_score=round(total_norm * w.get("title", 0.4), 1),
-            industry_score=round(total_norm * w.get("industry", 0.2), 1),
-            experience_score=round(total_norm * w.get("experience", 0.15), 1),
+            title_score=round(total_norm * w.get("title", 0.38), 1),
+            industry_score=round(total_norm * w.get("industry", 0.19), 1),
+            experience_score=round(total_norm * w.get("experience", 0.14), 1),
             skills_score=round(total_norm * w.get("skills", 0.1), 1),
-            seniority_score=round(total_norm * w.get("seniority", 0.08), 1),
+            seniority_score=round(total_norm * w.get("seniority", 0.07), 1),
             education_score=round(total_norm * w.get("education", 0.07), 1),
+            language_score=round(total_norm * w.get("language", 0.05), 1),
         )
         work_experiences = src.get("work_experiences") or []
         most_relevant = ""

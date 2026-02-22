@@ -16,6 +16,7 @@ CANDIDATES_MAPPING = {
         "work_radius_km": {"type": "integer"},
         "pensum_desired": {"type": "integer"},
         "pensum_from": {"type": "integer"},
+        "available_from": {"type": "date"},
         "on_contract_basis": {"type": "boolean"},
         "languages": {
             "type": "nested",
@@ -26,6 +27,7 @@ CANDIDATES_MAPPING = {
         },
         "seniority_level": {"type": "keyword"},
         "seniority_level_int": {"type": "integer"},
+        "language_level_max": {"type": "integer"},
         "work_experiences": {
             "type": "nested",
             "properties": {
