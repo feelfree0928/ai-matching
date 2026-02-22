@@ -33,6 +33,7 @@ RESUME_META_KEYS = [
     "_highest_degree",
     "_job_expectations",
     "_noo_resume_field_job_field_pensum_duration",
+    "_noo_resume_field_job_field_available_from",  # availability date (if applicable)
 ]
 
 # Post types in WordPress (verify against live DB)

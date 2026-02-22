@@ -27,7 +27,19 @@ Elasticsearch-based job-to-candidate matching for the Seniors at Work platform. 
    Wait until health is `green` or `yellow`.
 
 4. **Add standardized job titles**
-   Place a file `standardized_titles.txt` in the project root (one title per line, ~2000 titles) for title standardization.
+   Place a file `standardized_titles.txt` in the project root (one title per line, UTF-8). The system supports up to ~2,000 titles for LLM-based mapping. If you replace the file with a larger list, clear the title cache so existing candidates are re-mapped:
+   ```bash
+   python scripts/reset_caches_and_index.py   # clears data/title_mappings.db and indices
+   python scripts/initial_load.py            # full re-embed and re-index
+   ```
+   For delta sync only (clear just title cache): delete `data/title_mappings.db`, then run `python scripts/incremental_sync.py`.
+
+5. **After mapping changes** (e.g. new candidate fields like `available_from`, `language_level_max`)
+   Delete and recreate the Elasticsearch indices, then run a full re-index:
+   ```bash
+   python scripts/reset_caches_and_index.py
+   python scripts/initial_load.py
+   ```
 
 ---
 

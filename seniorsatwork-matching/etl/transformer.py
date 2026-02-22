@@ -62,6 +62,26 @@ def strip_html(html: str | None) -> str:
     return soup.get_text(separator=" ", strip=True)
 
 
+def _parse_available_from(meta_value: Any) -> str | None:
+    """Parse availability date from meta; return ISO date string (yyyy-MM-dd) or None if not set/invalid."""
+    if not meta_value or not isinstance(meta_value, str):
+        return None
+    s = meta_value.strip()
+    if not s:
+        return None
+    # Accept ISO-like yyyy-MM-dd or yyyy/MM/dd
+    if re.match(r"^\d{4}-\d{2}-\d{2}", s):
+        return s[:10]
+    if re.match(r"^\d{4}/\d{2}/\d{2}", s):
+        return s[:10].replace("/", "-")
+    # Optional: d.m.yyyy
+    m = re.match(r"^(\d{1,2})\.(\d{1,2})\.(\d{4})$", s)
+    if m:
+        d, mo, y = m.groups()
+        return f"{y}-{mo.zfill(2)}-{d.zfill(2)}"
+    return None
+
+
 def _safe_int(s: Any, default: int = 0) -> int:
     if s is None:
         return default
@@ -277,11 +297,14 @@ def transform_candidate(raw: dict[str, Any]) -> dict[str, Any]:
 
     seniority_level = infer_seniority(work_experiences)
 
+    available_from = _parse_available_from(meta.get("_noo_resume_field_job_field_available_from"))
+
     return {
         "post_id": raw["post_id"],
         "post_modified": raw.get("post_modified"),
         "work_experiences": work_experiences,
         "languages": languages,
+        "available_from": available_from,
         "location": {
             "lat": lat_f,
             "lon": lon_f,
