@@ -42,7 +42,7 @@ def get_es_client(url: str | None = None) -> Elasticsearch:
     from dotenv import load_dotenv
     load_dotenv()
     u = url or os.getenv("ELASTICSEARCH_URL", "http://localhost:9200")
-    kwargs = {"request_timeout": 60}
+    kwargs = {"request_timeout": 120}
     user = os.getenv("ELASTICSEARCH_USER")
     password = os.getenv("ELASTICSEARCH_PASSWORD")
     if user and password:
