@@ -42,7 +42,7 @@ def get_es_client(url: str | None = None) -> Elasticsearch:
     from dotenv import load_dotenv
     load_dotenv()
     u = url or os.getenv("ELASTICSEARCH_URL", "http://localhost:9200")
-    kwargs = {"request_timeout": 120}
+    kwargs = {"request_timeout": 300}
     user = os.getenv("ELASTICSEARCH_USER")
     password = os.getenv("ELASTICSEARCH_PASSWORD")
     if user and password:
@@ -156,9 +156,11 @@ def bulk_index_candidates(
     chunk_size: int = 200,
     *,
     errors: list[tuple[str, dict]] | None = None,
+    request_timeout: int | None = None,
 ) -> tuple[int, int]:
     """Index candidates; return (success_count, error_count).
-    If errors list is provided, append (doc_id, error_info) for each failed item."""
+    If errors list is provided, append (doc_id, error_info) for each failed item.
+    request_timeout: seconds per bulk request (default: use client default, 300)."""
     def gen() -> Iterator[dict]:
         for c in candidates:
             doc = _candidate_doc(c)
@@ -171,19 +173,23 @@ def bulk_index_candidates(
                 "_id": str(c["post_id"]),
                 "_source": doc,
             }
+    bulk_kw: dict[str, Any] = {
+        "chunk_size": chunk_size,
+        "raise_on_error": False,
+    }
+    if request_timeout is not None:
+        bulk_kw["request_timeout"] = request_timeout
     if errors is not None:
-        success, err_list = helpers.bulk(
-            es, gen(), chunk_size=chunk_size, raise_on_error=False, stats_only=False
-        )
+        bulk_kw["stats_only"] = False
+        success, err_list = helpers.bulk(es, gen(), **bulk_kw)
         for item in err_list:
             op = item.get("index", item)
             doc_id = op.get("_id", "?")
             err = op.get("error", op)
             errors.append((str(doc_id), err))
         return success, len(err_list)
-    success, failed = helpers.bulk(
-        es, gen(), chunk_size=chunk_size, raise_on_error=False, stats_only=True
-    )
+    bulk_kw["stats_only"] = True
+    success, failed = helpers.bulk(es, gen(), **bulk_kw)
     return success, failed
 
 
@@ -191,6 +197,8 @@ def bulk_index_jobs(
     es: Elasticsearch,
     jobs: list[dict[str, Any]],
     chunk_size: int = 100,
+    *,
+    request_timeout: int | None = None,
 ) -> tuple[int, int]:
     """Index job postings; return (success_count, error_count)."""
     def gen() -> Iterator[dict]:
@@ -201,9 +209,14 @@ def bulk_index_jobs(
                 "_id": str(j.get("post_id", "")),
                 "_source": doc,
             }
-    success, failed = helpers.bulk(
-        es, gen(), chunk_size=chunk_size, raise_on_error=False, stats_only=True
-    )
+    bulk_kw: dict[str, Any] = {
+        "chunk_size": chunk_size,
+        "raise_on_error": False,
+        "stats_only": True,
+    }
+    if request_timeout is not None:
+        bulk_kw["request_timeout"] = request_timeout
+    success, failed = helpers.bulk(es, gen(), **bulk_kw)
     return success, failed
 
 
