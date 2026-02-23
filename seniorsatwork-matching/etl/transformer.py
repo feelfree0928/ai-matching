@@ -62,6 +62,45 @@ def strip_html(html: str | None) -> str:
     return soup.get_text(separator=" ", strip=True)
 
 
+def _parse_php_string_list(meta_value: Any) -> list[str]:
+    """Parse a PHP serialized array of strings (e.g. a:2:{i:0;s:5:"Hello";i:1;s:5:"World";})."""
+    if not meta_value:
+        return []
+    if isinstance(meta_value, list):
+        return [str(x) for x in meta_value if x]
+    if not isinstance(meta_value, str) or not meta_value.strip().startswith("a:"):
+        s = str(meta_value).strip()
+        return [s] if s else []
+    try:
+        raw = phpserialize.loads(meta_value.encode("utf-8"))
+    except Exception:
+        return []
+    if not isinstance(raw, dict):
+        return []
+    result = []
+    for k in sorted(x for x in raw if isinstance(x, int)):
+        v = raw[k]
+        if isinstance(v, bytes):
+            result.append(v.decode("utf-8", errors="replace"))
+        elif isinstance(v, str):
+            result.append(v)
+    return [x for x in result if x]
+
+
+def _parse_unix_timestamp(val: Any) -> str | None:
+    """Convert Unix timestamp (string or int) to ISO-8601 date string."""
+    if not val:
+        return None
+    try:
+        from datetime import datetime, timezone
+        ts = int(str(val).strip())
+        if ts <= 0:
+            return None
+        return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+    except (ValueError, TypeError, OSError):
+        return None
+
+
 def _parse_available_from(meta_value: Any) -> str | None:
     """Parse availability date from meta; return ISO date string (yyyy-MM-dd) or None if not set/invalid."""
     if not meta_value or not isinstance(meta_value, str):
@@ -299,28 +338,88 @@ def transform_candidate(raw: dict[str, Any]) -> dict[str, Any]:
 
     available_from = _parse_available_from(meta.get("_noo_resume_field_job_field_available_from"))
 
+    # ── New fields ────────────────────────────────────────────────────────────
+    candidate_name = (raw.get("post_title") or "").strip()
+    phone = (meta.get("_noo_resume_field__phone") or "").strip()
+    gender = (meta.get("_noo_resume_field__sex") or "").strip()
+    linkedin_url = (
+        (meta.get("linkedin") or meta.get("_noo_resume_field_linkedin") or "").strip()
+    )
+    website_url = (meta.get("website") or "").strip()
+    short_description = strip_html(meta.get("user_short_description"))
+    job_expectations = strip_html(meta.get("_job_expectations"))
+    highest_degree = (meta.get("_highest_degree") or "").strip()
+    ai_profile_description = strip_html(meta.get("_noo_resume_field_job_field_audio_describe_result"))
+    ai_experience_description = strip_html(meta.get("_noo_resume_field_job_field_audio_experience_result"))
+    ai_skills_description = strip_html(meta.get("_noo_resume_field_job_field_audio_skill_result"))
+    ai_text_skill_result = strip_html(meta.get("_noo_resume_field_job_field_text_skill_result"))
+    most_experience_industries = _parse_php_string_list(
+        meta.get("_noo_resume_field_job_field_most_experience_branches")
+    )
+    profile_status = (meta.get("_noo_resume_field__status") or "").strip()
+    registered_at = (meta.get("_noo_resume_field__registration") or "").strip() or None
+    expires_at = _parse_unix_timestamp(meta.get("_expires"))
+    featured = str(meta.get("_featured") or "").strip().lower() == "yes"
+    pensum_duration = (meta.get("_noo_resume_field_job_field_pensum_duration") or "").strip()
+    work_radius_text = (meta.get("_noo_resume_field_job_field_arbeitsradius") or "").strip()
+    zip_code = (meta.get("_noo_resume_field_job_field_zip") or "").strip()
+    voluntary = (meta.get("_noo_resume_field_job_field_freiwillig") or "").strip()
+    cv_file = (meta.get("_noo_resume_field_cvfile") or "").strip()
+    post_date = raw.get("post_date")
+
     return {
         "post_id": raw["post_id"],
         "post_modified": raw.get("post_modified"),
+        "post_date": post_date,
+        # identity
+        "candidate_name": candidate_name,
+        "phone": phone,
+        "gender": gender,
+        "linkedin_url": linkedin_url,
+        "website_url": website_url,
+        "cv_file": cv_file,
+        # profile text
+        "short_description": short_description,
+        "job_expectations": job_expectations,
+        "highest_degree": highest_degree,
+        "ai_profile_description": ai_profile_description,
+        "ai_experience_description": ai_experience_description,
+        "ai_skills_description": ai_skills_description,
+        "ai_text_skill_result": ai_text_skill_result,
+        # experience & skills
         "work_experiences": work_experiences,
+        "most_experience_industries": most_experience_industries,
+        "skills_text": skills_text,
+        "education_text": education_text,
         "languages": languages,
-        "available_from": available_from,
+        # location
         "location": {
             "lat": lat_f,
             "lon": lon_f,
             "address": (meta.get("_resume_address") or "").strip(),
         },
+        "zip_code": zip_code,
         "work_radius_km": work_radius_km if work_radius_km > 0 else 50,
+        "work_radius_text": work_radius_text,
+        # availability & contract
+        "available_from": available_from,
         "pensum_desired": pensum,
         "pensum_from": pensum_from,
+        "pensum_duration": pensum_duration,
         "on_contract_basis": on_contract_basis,
-        "skills_text": skills_text,
-        "education_text": education_text,
+        "voluntary": voluntary,
+        # personal
         "birth_year": birth_year if birth_year > 0 else None,
         "retired": retired,
         "seniority_level": seniority_level,
+        # categories
         "job_categories_primary": _parse_category_ids(meta.get("_noo_resume_field_job_category_primary")),
         "job_categories_secondary": _parse_category_ids(meta.get("_noo_resume_field_job_category_secondary")),
+        # meta
+        "profile_status": profile_status,
+        "registered_at": registered_at,
+        "expires_at": expires_at,
+        "featured": featured,
     }
 
 

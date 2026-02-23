@@ -61,25 +61,69 @@ class CandidateLanguage(BaseModel):
 class CandidateMatch(BaseModel):
     post_id: int
     score: ScoreBreakdown
+    rank: int = 0
+    rank_explanation: list[str] = Field(default_factory=list, description="Why ranked #N bullet points")
+
+    # ── Identity & contact ───────────────────────────────
+    candidate_name: str = ""
+    phone: str = ""
+    gender: str = ""
+    linkedin_url: str = ""
+    website_url: str = ""
+    cv_file: str = ""
+
+    # ── Summary & expectations ───────────────────────────
+    short_description: str = ""
+    job_expectations: str = ""
+    highest_degree: str = ""
+
+    # ── AI-generated descriptions (when available) ───────
+    ai_profile_description: str = ""
+    ai_experience_description: str = ""
+    ai_skills_description: str = ""
+    ai_text_skill_result: str = ""
+
+    # ── Experience & skills ──────────────────────────────
     most_relevant_role: str = ""
     total_relevant_years: float = 0.0
     seniority_level: str = ""
-    location: str = ""
-    pensum_desired: int = 100
-    top_industries: list[str] = Field(default_factory=list)
-    rank: int = 0
     work_experiences: list[WorkExperienceItem] = Field(default_factory=list)
     skills_text: str = ""
     education_text: str = ""
+    most_experience_industries: list[str] = Field(default_factory=list)
+    top_industries: list[str] = Field(default_factory=list)
+
+    # ── Languages ────────────────────────────────────────
     languages: list[CandidateLanguage] = Field(default_factory=list)
-    birth_year: Optional[int] = None
+
+    # ── Location ─────────────────────────────────────────
+    location: str = ""
+    zip_code: str = ""
+    work_radius_km: int = 50
+    work_radius_text: str = ""
+
+    # ── Availability & contract ──────────────────────────
     available_from: Optional[str] = None
+    pensum_desired: int = 100
     pensum_from: int = 0
+    pensum_duration: str = ""
     on_contract_basis: bool = False
+    voluntary: str = ""
+
+    # ── Personal ─────────────────────────────────────────
+    birth_year: Optional[int] = None
     retired: bool = False
+
+    # ── Categories ───────────────────────────────────────
     job_categories_primary: list[str] = Field(default_factory=list)
     job_categories_secondary: list[str] = Field(default_factory=list)
-    rank_explanation: list[str] = Field(default_factory=list, description="Why ranked #N bullet points")
+
+    # ── Profile meta ─────────────────────────────────────
+    profile_status: str = ""
+    registered_at: Optional[str] = None
+    expires_at: Optional[str] = None
+    featured: bool = False
+    post_date: Optional[str] = None
 
 
 class MatchResponse(BaseModel):

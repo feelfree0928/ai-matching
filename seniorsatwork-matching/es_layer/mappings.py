@@ -73,6 +73,35 @@ CANDIDATES_MAPPING = {
         "retired": {"type": "boolean"},
         "job_categories_primary": {"type": "keyword"},
         "job_categories_secondary": {"type": "keyword"},
+        # ── Identity & contact ───────────────────────────
+        "candidate_name": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+        "phone": {"type": "keyword"},
+        "gender": {"type": "keyword"},
+        "linkedin_url": {"type": "keyword"},
+        "website_url": {"type": "keyword"},
+        "cv_file": {"type": "keyword"},
+        # ── Profile text ─────────────────────────────────
+        "short_description": {"type": "text"},
+        "job_expectations": {"type": "text"},
+        "highest_degree": {"type": "keyword"},
+        "ai_profile_description": {"type": "text"},
+        "ai_experience_description": {"type": "text"},
+        "ai_skills_description": {"type": "text"},
+        "ai_text_skill_result": {"type": "text"},
+        # ── Industries summary ───────────────────────────
+        "most_experience_industries": {"type": "keyword"},
+        # ── Location extras ──────────────────────────────
+        "zip_code": {"type": "keyword"},
+        "work_radius_text": {"type": "keyword"},
+        # ── Contract & availability extras ───────────────
+        "pensum_duration": {"type": "keyword"},
+        "voluntary": {"type": "keyword"},
+        # ── Profile meta ─────────────────────────────────
+        "profile_status": {"type": "keyword"},
+        "registered_at": {"type": "keyword"},
+        "expires_at": {"type": "date"},
+        "featured": {"type": "boolean"},
+        "post_date": {"type": "date"},
     },
 }
 
