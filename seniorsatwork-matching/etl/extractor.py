@@ -11,29 +11,56 @@ load_dotenv()
 
 # Meta keys we need for candidate profiles (resumes)
 RESUME_META_KEYS = [
-    "_viewable",
-    "_noo_resume_field__taetigkeiten",
-    "_noo_resume_field_job_field_technische_kenntnisse",
-    "_noo_resume_field_job_field_diplome",
-    "_noo_resume_field_languages_i_speak",
+    # ── Location ─────────────────────────────────────────
     "_resume_address",
     "_resume_address_lat",
     "_resume_address_lon",
     "_noo_resume_field_job_field_zip",
     "_noo_resume_field_job_field_arbeitsradius_km",
+    "_noo_resume_field_job_field_arbeitsradius",
+    # ── Work history & experience ─────────────────────────
+    "_noo_resume_field__taetigkeiten",
+    "_noo_resume_field_job_field_most_experience_branches",
+    # ── Skills, education, expectations ──────────────────
+    "_noo_resume_field_job_field_technische_kenntnisse",
+    "_noo_resume_field_job_field_diplome",
+    "_highest_degree",
+    "_job_expectations",
+    # ── AI-generated text (audio transcriptions) ─────────
+    "_noo_resume_field_job_field_audio_describe_result",
+    "_noo_resume_field_job_field_audio_experience_result",
+    "_noo_resume_field_job_field_audio_skill_result",
+    "_noo_resume_field_job_field_text_skill_result",
+    # ── Languages ─────────────────────────────────────────
+    "_noo_resume_field_languages_i_speak",
+    # ── Availability & contract terms ────────────────────
     "_noo_resume_field_job_field_pensum",
     "_noo_resume_field_job_field_pensum_from",
+    "_noo_resume_field_job_field_pensum_duration",
+    "_noo_resume_field_job_field_available_from",
     "_noo_resume_field_job_field_auftragsbasis",
+    "_noo_resume_field_job_field_freiwillig",
+    # ── Categories ───────────────────────────────────────
     "_noo_resume_field_job_category_primary",
     "_noo_resume_field_job_category_secondary",
     "_job_category",
+    # ── Personal info ────────────────────────────────────
     "_noo_resume_field__jahrgang",
-    "_noo_resume_field_job_field_freiwillig",
+    "_noo_resume_field__sex",
+    "_noo_resume_field__status",
+    "_noo_resume_field__registration",
     "_noo_resume_field_already_retired",
-    "_highest_degree",
-    "_job_expectations",
-    "_noo_resume_field_job_field_pensum_duration",
-    "_noo_resume_field_job_field_available_from",  # availability date (if applicable)
+    # ── Contact & online presence ─────────────────────────
+    "_noo_resume_field__phone",
+    "linkedin",
+    "_noo_resume_field_linkedin",
+    "website",
+    "_noo_resume_field_cvfile",
+    # ── Profile meta ─────────────────────────────────────
+    "_viewable",
+    "_featured",
+    "_expires",
+    "user_short_description",
 ]
 
 # Post types in WordPress (verify against live DB)
@@ -78,7 +105,8 @@ def extract_candidates(
             if limit is not None:
                 # When limiting, only get candidates that have location (lat/lon) so they can be indexed
                 query = """
-                    SELECT DISTINCT p.ID AS post_id, p.post_content, p.post_excerpt, p.post_modified
+                    SELECT DISTINCT p.ID AS post_id, p.post_title, p.post_content,
+                                    p.post_excerpt, p.post_modified, p.post_date
                     FROM wp_posts p
                     INNER JOIN wp_postmeta pm_lat ON p.ID = pm_lat.post_id
                         AND pm_lat.meta_key = '_resume_address_lat'
@@ -93,7 +121,8 @@ def extract_candidates(
                 params = [post_type, post_status, limit]
             else:
                 query = """
-                    SELECT ID AS post_id, post_content, post_excerpt, post_modified
+                    SELECT ID AS post_id, post_title, post_content, post_excerpt,
+                           post_modified, post_date
                     FROM wp_posts
                     WHERE post_type = %s AND post_status = %s
                     ORDER BY ID
@@ -129,9 +158,11 @@ def extract_candidates(
         for r in rows:
             result.append({
                 "post_id": r["post_id"],
+                "post_title": r.get("post_title") or "",
                 "post_content": r["post_content"] or "",
                 "post_excerpt": r["post_excerpt"] or "",
                 "post_modified": r["post_modified"],
+                "post_date": r.get("post_date"),
                 "meta": meta_by_post.get(r["post_id"], {}),
             })
         return result

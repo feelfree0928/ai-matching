@@ -146,6 +146,35 @@ def _candidate_doc(c: dict[str, Any]) -> dict[str, Any]:
         "retired": c.get("retired", False),
         "job_categories_primary": c.get("job_categories_primary") or [],
         "job_categories_secondary": c.get("job_categories_secondary") or [],
+        # ── Identity & contact ───────────────────────────
+        "candidate_name": (c.get("candidate_name") or "").strip() or None,
+        "phone": (c.get("phone") or "").strip() or None,
+        "gender": (c.get("gender") or "").strip() or None,
+        "linkedin_url": (c.get("linkedin_url") or "").strip() or None,
+        "website_url": (c.get("website_url") or "").strip() or None,
+        "cv_file": (c.get("cv_file") or "").strip() or None,
+        # ── Profile text ─────────────────────────────────
+        "short_description": (c.get("short_description") or "").strip() or None,
+        "job_expectations": (c.get("job_expectations") or "")[:16000] or None,
+        "highest_degree": (c.get("highest_degree") or "").strip() or None,
+        "ai_profile_description": (c.get("ai_profile_description") or "")[:16000] or None,
+        "ai_experience_description": (c.get("ai_experience_description") or "")[:16000] or None,
+        "ai_skills_description": (c.get("ai_skills_description") or "")[:16000] or None,
+        "ai_text_skill_result": (c.get("ai_text_skill_result") or "")[:16000] or None,
+        # ── Industries summary ───────────────────────────
+        "most_experience_industries": c.get("most_experience_industries") or [],
+        # ── Location extras ──────────────────────────────
+        "zip_code": (c.get("zip_code") or "").strip() or None,
+        "work_radius_text": (c.get("work_radius_text") or "").strip() or None,
+        # ── Contract & availability extras ───────────────
+        "pensum_duration": (c.get("pensum_duration") or "").strip() or None,
+        "voluntary": (c.get("voluntary") or "").strip() or None,
+        # ── Profile meta ─────────────────────────────────
+        "profile_status": (c.get("profile_status") or "").strip() or None,
+        "registered_at": c.get("registered_at"),
+        "expires_at": c.get("expires_at"),
+        "featured": c.get("featured", False),
+        "post_date": c.get("post_date"),
     }
     return doc
 

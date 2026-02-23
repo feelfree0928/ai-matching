@@ -253,28 +253,67 @@ def run_match(
         if not isinstance(job_cats_secondary, list):
             job_cats_secondary = []
 
+        most_exp_industries = src.get("most_experience_industries")
+        if isinstance(most_exp_industries, str):
+            most_exp_industries = [most_exp_industries] if most_exp_industries else []
+        if not isinstance(most_exp_industries, list):
+            most_exp_industries = []
+
         matches.append(CandidateMatch(
             post_id=src.get("post_id", 0),
             score=breakdown,
+            rank=i + 1,
+            rank_explanation=rank_explanation,
+            # identity & contact
+            candidate_name=(src.get("candidate_name") or "").strip(),
+            phone=(src.get("phone") or "").strip(),
+            gender=(src.get("gender") or "").strip(),
+            linkedin_url=(src.get("linkedin_url") or "").strip(),
+            website_url=(src.get("website_url") or "").strip(),
+            cv_file=(src.get("cv_file") or "").strip(),
+            # profile text
+            short_description=(src.get("short_description") or "").strip(),
+            job_expectations=(src.get("job_expectations") or "").strip(),
+            highest_degree=(src.get("highest_degree") or "").strip(),
+            ai_profile_description=(src.get("ai_profile_description") or "").strip(),
+            ai_experience_description=(src.get("ai_experience_description") or "").strip(),
+            ai_skills_description=(src.get("ai_skills_description") or "").strip(),
+            ai_text_skill_result=(src.get("ai_text_skill_result") or "").strip(),
+            # experience & skills
             most_relevant_role=most_relevant,
             total_relevant_years=float(src.get("total_weighted_relevant_years", 0) or 0),
             seniority_level=src.get("seniority_level", ""),
-            location=addr,
-            pensum_desired=int(src.get("pensum_desired", 100) or 100),
-            top_industries=industries,
-            rank=i + 1,
             work_experiences=work_experiences,
             skills_text=(src.get("skills_text") or "").strip(),
             education_text=(src.get("education_text") or "").strip(),
+            most_experience_industries=most_exp_industries,
+            top_industries=industries,
+            # languages
             languages=languages,
-            birth_year=src.get("birth_year"),
+            # location
+            location=addr,
+            zip_code=(src.get("zip_code") or "").strip(),
+            work_radius_km=int(src.get("work_radius_km", 50) or 50),
+            work_radius_text=(src.get("work_radius_text") or "").strip(),
+            # availability & contract
             available_from=src.get("available_from"),
+            pensum_desired=int(src.get("pensum_desired", 100) or 100),
             pensum_from=int(src.get("pensum_from", 0) or 0),
+            pensum_duration=(src.get("pensum_duration") or "").strip(),
             on_contract_basis=bool(src.get("on_contract_basis", False)),
+            voluntary=(src.get("voluntary") or "").strip(),
+            # personal
+            birth_year=src.get("birth_year"),
             retired=bool(src.get("retired", False)),
+            # categories
             job_categories_primary=job_cats_primary,
             job_categories_secondary=job_cats_secondary,
-            rank_explanation=rank_explanation,
+            # profile meta
+            profile_status=(src.get("profile_status") or "").strip(),
+            registered_at=src.get("registered_at"),
+            expires_at=src.get("expires_at"),
+            featured=bool(src.get("featured", False)),
+            post_date=src.get("post_date"),
         ))
 
     return MatchResponse(
