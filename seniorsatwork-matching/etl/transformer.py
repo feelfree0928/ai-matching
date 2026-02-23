@@ -324,6 +324,104 @@ def transform_candidate(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _safe_float(val: Any) -> float | None:
+    """Parse a float from various types; return None on failure."""
+    if val is None:
+        return None
+    try:
+        f = float(str(val).strip())
+        return f if f != 0.0 else None
+    except (ValueError, TypeError):
+        return None
+
+
+def transform_job(raw: dict[str, Any]) -> dict[str, Any]:
+    """
+    Transform one raw job posting (from extractor) into a normalized job document.
+    Tries multiple Noo Job Board meta key patterns; falls back to safe defaults so
+    the document is always indexable.
+    """
+    meta = raw.get("meta") or {}
+    title = (raw.get("post_title") or "").strip()
+
+    # Job description / skills: prefer explicit skills meta, fall back to full post_content
+    skills_text = strip_html(
+        meta.get("_noo_job_field_skills")
+        or meta.get("_noo_job_field_job_skills")
+        or raw.get("post_content")
+        or ""
+    )
+    edu_text = strip_html(meta.get("_noo_job_field_education") or meta.get("_noo_job_field_diplome") or "")
+
+    # Industry
+    industry = (
+        meta.get("_noo_job_field_industry")
+        or meta.get("_noo_job_field_job_industry")
+        or meta.get("_job_category")
+        or ""
+    ).strip()
+
+    # Seniority
+    raw_seniority = (
+        meta.get("_noo_job_field_seniority")
+        or meta.get("_noo_job_field_career_level")
+        or ""
+    ).strip().lower()
+    seniority = raw_seniority if raw_seniority in SENIORITY_LEVELS else _infer_seniority_from_title(title)
+
+    # Location — try multiple common meta key patterns used by Noo Job Board + geolocation plugins
+    lat = (
+        _safe_float(meta.get("geolocation_lat"))
+        or _safe_float(meta.get("_noo_job_field_address_lat"))
+        or _safe_float(meta.get("_job_latitude"))
+        or _safe_float(meta.get("_noo_job_lat"))
+    )
+    lon = (
+        _safe_float(meta.get("geolocation_long"))
+        or _safe_float(meta.get("_noo_job_field_address_lon"))
+        or _safe_float(meta.get("_job_longitude"))
+        or _safe_float(meta.get("_noo_job_lon"))
+    )
+    location_str = (
+        meta.get("_noo_job_field_address")
+        or meta.get("_job_location")
+        or meta.get("_noo_job_field_location")
+        or raw.get("post_excerpt")
+        or ""
+    ).strip()
+
+    radius = _safe_int(meta.get("_noo_job_field_radius") or meta.get("_job_radius"), 50)
+    pensum_min = _safe_int(meta.get("_noo_job_field_pensum_from") or meta.get("_job_pensum_min"), 0)
+    pensum_max = _safe_int(meta.get("_noo_job_field_pensum") or meta.get("_job_pensum_max"), 100)
+
+    # Required languages — Noo Job Board may store as serialized array under _noo_job_field_languages
+    required_languages: list[dict] = []
+    lang_raw = meta.get("_noo_job_field_languages") or meta.get("_noo_job_field_languages_required")
+    if lang_raw:
+        parsed_langs = parse_languages(lang_raw)
+        required_languages = [{"name": l["lang"], "min_level": l.get("degree", "B2")} for l in parsed_langs]
+
+    return {
+        "post_id": raw["post_id"],
+        "post_modified": raw.get("post_modified"),
+        "title": title,
+        "industry": industry,
+        "required_skills_text": skills_text[:32000],
+        "required_education_text": edu_text[:32000],
+        "expected_seniority_level": seniority,
+        "location": {"lat": lat, "lon": lon, "address": location_str} if lat and lon else None,
+        "radius_km": radius if radius > 0 else 50,
+        "pensum_min": pensum_min,
+        "pensum_max": pensum_max,
+        "required_languages": required_languages,
+    }
+
+
+def _infer_seniority_from_title(title: str) -> str:
+    """Infer seniority level from a job posting title."""
+    return _match_seniority(title.lower()) if title else "senior"
+
+
 def _parse_category_ids(meta_value: Any) -> list[str]:
     """Parse serialized array of category IDs."""
     if not meta_value or not isinstance(meta_value, str) or not meta_value.strip().startswith("a:"):

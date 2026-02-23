@@ -14,11 +14,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from es_layer.indexer import bulk_index_candidates, ensure_indices, get_es_client
+from es_layer.indexer import bulk_index_candidates, bulk_index_jobs, ensure_indices, get_es_client
 from etl.experience_scorer import apply_experience_scoring
-from etl.extractor import extract_candidates
+from etl.extractor import extract_candidates, extract_job_postings
 from etl.title_standardizer import apply_standardized_titles, load_standardized_titles
-from etl.transformer import transform_candidate
+from etl.transformer import transform_candidate, transform_job
 from embeddings.generator import add_embeddings_to_candidate
 from openai import OpenAI
 from tqdm import tqdm
@@ -122,6 +122,34 @@ def main() -> None:
             reason = err.get("reason", err) if isinstance(err, dict) else err
             err_type = err.get("type", "") if isinstance(err, dict) else ""
             print(f"  post_id={doc_id}: [{err_type}] {reason}")
+
+    index_jobs(es)
+
+
+def index_jobs(es) -> None:
+    """Extract job postings from WordPress and index them into Elasticsearch."""
+    print("Extracting job postings from WordPress/MariaDB...")
+    try:
+        raw_jobs = extract_job_postings()
+    except Exception as e:
+        print(f"Job extraction failed: {e}")
+        return
+    print(f"Extracted {len(raw_jobs)} job postings.")
+    if not raw_jobs:
+        print("No job postings to index.")
+        return
+    transformed_jobs = []
+    for rj in raw_jobs:
+        try:
+            j = transform_job(rj)
+            transformed_jobs.append(j)
+        except Exception as e:
+            print(f"Skip job post_id={rj.get('post_id')}: {e}")
+    if transformed_jobs:
+        ok, failed = bulk_index_jobs(es, transformed_jobs)
+        print(f"Jobs indexed: {ok} ok, {failed} failed.")
+    else:
+        print("No job postings could be transformed.")
 
 
 if __name__ == "__main__":
