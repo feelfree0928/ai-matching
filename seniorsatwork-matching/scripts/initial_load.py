@@ -113,7 +113,9 @@ def main() -> None:
         return
 
     index_errors: list[tuple[str, dict]] = []
-    success, failed = bulk_index_candidates(es, processed, chunk_size=50, errors=index_errors)
+    success, failed = bulk_index_candidates(
+        es, processed, chunk_size=25, errors=index_errors, request_timeout=600
+    )
     print(f"Indexed: {success} ok, {failed} failed.")
     if index_errors:
         max_show = 10
