@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from api import config as app_config
@@ -23,6 +24,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Job Matching API", version="1.0", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.post("/api/match", response_model=MatchResponse)
@@ -86,8 +94,28 @@ def post_sync_candidates() -> dict[str, Any]:
 
 @app.post("/api/index/jobs/sync")
 def post_sync_jobs() -> dict[str, Any]:
-    """Sync job postings from WordPress (placeholder – implement same pattern as candidates)."""
-    return {"ok": True, "message": "Job sync not yet implemented; use initial_load or custom script."}
+    """Trigger delta sync of job postings from WordPress."""
+    import subprocess
+    import sys
+    import os
+    script = os.path.join(os.path.dirname(__file__), "..", "scripts", "jobs_sync.py")
+    try:
+        result = subprocess.run(
+            [sys.executable, script],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=os.path.join(os.path.dirname(__file__), ".."),
+        )
+        return {
+            "ok": result.returncode == 0,
+            "stdout": result.stdout or "",
+            "stderr": result.stderr or "",
+        }
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "stdout": "", "stderr": "Sync timed out after 300s"}
+    except Exception as e:
+        return {"ok": False, "stdout": "", "stderr": str(e)}
 
 
 @app.get("/api/health")
