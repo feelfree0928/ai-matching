@@ -153,14 +153,18 @@ def _candidate_doc(c: dict[str, Any]) -> dict[str, Any]:
 def bulk_index_candidates(
     es: Elasticsearch,
     candidates: list[dict[str, Any]],
-    chunk_size: int = 200,
+    chunk_size: int = 50,
     *,
     errors: list[tuple[str, dict]] | None = None,
     request_timeout: int | None = None,
 ) -> tuple[int, int]:
-    """Index candidates; return (success_count, error_count).
-    If errors list is provided, append (doc_id, error_info) for each failed item.
-    request_timeout: seconds per bulk request (default: use client default, 300)."""
+    """Index candidates using streaming_bulk; return (success_count, error_count).
+
+    Uses streaming_bulk so each chunk's response is processed immediately — no
+    silent blocking while waiting for all 26k docs to accumulate.
+    If *errors* list is provided, (doc_id, error_info) tuples are appended for
+    every failed document.
+    """
     def gen() -> Iterator[dict]:
         for c in candidates:
             doc = _candidate_doc(c)
@@ -173,24 +177,28 @@ def bulk_index_candidates(
                 "_id": str(c["post_id"]),
                 "_source": doc,
             }
-    bulk_kw: dict[str, Any] = {
+
+    streaming_kw: dict[str, Any] = {
         "chunk_size": chunk_size,
         "raise_on_error": False,
+        "raise_on_exception": False,
     }
     if request_timeout is not None:
-        bulk_kw["request_timeout"] = request_timeout
-    if errors is not None:
-        bulk_kw["stats_only"] = False
-        success, err_list = helpers.bulk(es, gen(), **bulk_kw)
-        for item in err_list:
-            op = item.get("index", item)
-            doc_id = op.get("_id", "?")
-            err = op.get("error", op)
-            errors.append((str(doc_id), err))
-        return success, len(err_list)
-    bulk_kw["stats_only"] = True
-    success, failed = helpers.bulk(es, gen(), **bulk_kw)
-    return success, failed
+        streaming_kw["request_timeout"] = request_timeout
+
+    success_count = 0
+    fail_count = 0
+    for ok, item in helpers.streaming_bulk(es, gen(), **streaming_kw):
+        if ok:
+            success_count += 1
+        else:
+            fail_count += 1
+            if errors is not None:
+                op = item.get("index", item)
+                doc_id = op.get("_id", "?")
+                err = op.get("error", op)
+                errors.append((str(doc_id), err))
+    return success_count, fail_count
 
 
 def bulk_index_jobs(
