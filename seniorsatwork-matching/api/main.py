@@ -6,14 +6,17 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import Any
 
+from elasticsearch.exceptions import NotFoundError
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from api import config as app_config
 from api.matching import run_match
-from api.models import JobMatchRequest, MatchResponse
+from api.models import JobMatchRequest, LanguageRequirement, MatchResponse
 from es_layer.indexer import get_es_client
+from es_layer.mappings import JOBS_INDEX
 
 
 @asynccontextmanager
@@ -43,12 +46,20 @@ def post_match(req: JobMatchRequest) -> MatchResponse:
 def get_job_matches(post_id: int) -> MatchResponse:
     """Get matches for an already-indexed job by post_id. Fetches job from ES and runs match."""
     es = get_es_client()
-    from es_layer.mappings import JOBS_INDEX
     try:
         doc = es.get(index=JOBS_INDEX, id=str(post_id))
-    except Exception:
+    except NotFoundError:
         raise HTTPException(status_code=404, detail="Job not found")
     src = doc.get("_source") or {}
+    raw_langs = src.get("required_languages") or []
+    required_languages = [
+        LanguageRequirement(
+            name=item.get("name", "") or item.get("lang", ""),
+            min_level=item.get("min_level", "B2") or "B2",
+        )
+        for item in raw_langs
+        if item.get("name") or item.get("lang")
+    ]
     req = JobMatchRequest(
         post_id=post_id,
         title=src.get("title", ""),
@@ -61,7 +72,7 @@ def get_job_matches(post_id: int) -> MatchResponse:
         radius_km=src.get("radius_km", 50),
         pensum_min=src.get("pensum_min", 0),
         pensum_max=src.get("pensum_max", 100),
-        required_languages=[],
+        required_languages=required_languages,
     )
     return run_match(req)
 

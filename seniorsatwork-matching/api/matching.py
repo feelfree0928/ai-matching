@@ -12,7 +12,14 @@ from es_layer.mappings import CANDIDATES_INDEX, SENIORITY_TO_INT
 from es_layer.queries import build_hard_filters, build_script_score
 
 from api.config import get_max_results, get_min_score_raw, get_weights
-from api.models import CandidateMatch, JobMatchRequest, MatchResponse, ScoreBreakdown
+from api.models import (
+    CandidateLanguage,
+    CandidateMatch,
+    JobMatchRequest,
+    MatchResponse,
+    ScoreBreakdown,
+    WorkExperienceItem,
+)
 from embeddings.generator import embed_text
 
 # Default zero vector when job has no text for a dimension
@@ -30,6 +37,73 @@ def _job_embeddings(req: JobMatchRequest, client=None):
     return title_vec, industry_vec, skills_vec, edu_vec
 
 
+def _build_rank_explanation(
+    src: dict[str, Any],
+    req: JobMatchRequest,
+    rank: int,
+    breakdown: ScoreBreakdown,
+    weights: dict[str, float],
+) -> list[str]:
+    """Build rule-based 'Why ranked #N' bullet points from candidate _source and job request."""
+    bullets: list[str] = []
+    job_title_words = set((req.title or "").lower().split())
+    work_experiences = src.get("work_experiences") or []
+    industries = list({exp.get("industry") for exp in work_experiences if exp.get("industry")})
+    job_industry_words = set((req.industry or "").lower().split())
+    cand_seniority = (src.get("seniority_level") or "").strip().lower()
+    job_seniority = (req.expected_seniority_level or "senior").strip().lower()
+
+    # Title: job title word overlap with work experience titles
+    for exp in work_experiences:
+        raw = (exp.get("raw_title") or "").strip()
+        if not raw:
+            continue
+        title_words = set(raw.lower().split())
+        overlap = job_title_words & title_words
+        if len(overlap) >= 2:
+            bullets.append(f"Job title match: {raw}")
+            break
+    if not any("Job title match" in b for b in bullets) and work_experiences:
+        best = max(work_experiences, key=lambda x: float(x.get("weighted_years", 0) or 0))
+        best_title = best.get("standardized_title") or best.get("raw_title") or ""
+        if best_title:
+            bullets.append(f"Most relevant role: {best_title}")
+
+    # Experience
+    years = float(src.get("total_weighted_relevant_years", 0) or 0)
+    if years > 0:
+        bullets.append(f"{years:.0f} years of relevant experience")
+
+    # Industry
+    for ind in industries[:3]:
+        if ind and job_industry_words and any(w in (ind or "").lower() for w in job_industry_words):
+            bullets.append(f"Industry match: {ind}")
+            break
+    if not any("Industry" in b for b in bullets) and industries:
+        bullets.append(f"Industry: {', '.join(industries[:3])}")
+
+    # Seniority
+    if cand_seniority == job_seniority:
+        bullets.append(f"Ideal seniority level ({job_seniority})")
+    elif cand_seniority:
+        bullets.append(f"Seniority: {cand_seniority} (expected: {job_seniority})")
+
+    # Skills: keyword overlap
+    skills_text = (src.get("skills_text") or "").lower()
+    required_skills = (req.required_skills or "").lower()
+    if skills_text and required_skills:
+        req_tokens = set(w.strip() for w in required_skills.replace(",", " ").split() if len(w.strip()) > 1)
+        found = [t for t in req_tokens if t in skills_text][:5]
+        if found:
+            bullets.append("Skills: " + ", ".join(found))
+
+    # Education
+    if breakdown.education_score and breakdown.education_score > (breakdown.total * 0.05):
+        bullets.append("Relevant certifications/education")
+
+    return bullets[:8]
+
+
 def run_match(
     req: JobMatchRequest,
     es: Elasticsearch | None = None,
@@ -44,7 +118,7 @@ def run_match(
     es = es or get_es_client()
     index_name = index or CANDIDATES_INDEX
     min_score = min_score_override if min_score_override is not None else get_min_score_raw()
-    max_results = max_results_override if max_results_override is not None else get_max_results()
+    max_results = max_results_override if max_results_override is not None else (req.max_results or get_max_results())
     weights = get_weights()
 
     title_vec, industry_vec, skills_vec, edu_vec = _job_embeddings(req)
@@ -71,6 +145,12 @@ def run_match(
 
     effective_min_score = req.min_score if req.min_score is not None else min_score
 
+    source_excludes = [
+        "aggregated_title_embedding",
+        "aggregated_industry_embedding",
+        "skills_embedding",
+        "education_embedding",
+    ]
     try:
         resp = es.search(
             index=index_name,
@@ -82,6 +162,7 @@ def run_match(
             },
             min_score=effective_min_score,
             size=max_results,
+            source_excludes=source_excludes,
         )
     except BadRequestError as e:
         detail = str(e)
@@ -118,7 +199,7 @@ def run_match(
         total_val = total
 
     matches = []
-    for h in hits:
+    for i, h in enumerate(hits):
         src = h.get("_source") or {}
         score_raw = float(h.get("_score", 0))
         # Normalize to 0-100 for display (script score is roughly 0..2)
@@ -135,13 +216,43 @@ def run_match(
             education_score=round(total_norm * w.get("education", 0.07), 1),
             language_score=round(total_norm * w.get("language", 0.05), 1),
         )
-        work_experiences = src.get("work_experiences") or []
+        work_experiences_raw = src.get("work_experiences") or []
         most_relevant = ""
-        if work_experiences:
-            best = max(work_experiences, key=lambda x: float(x.get("weighted_years", 0) or 0))
+        if work_experiences_raw:
+            best = max(work_experiences_raw, key=lambda x: float(x.get("weighted_years", 0) or 0))
             most_relevant = best.get("standardized_title") or best.get("raw_title") or ""
-        industries = list({exp.get("industry") for exp in work_experiences if exp.get("industry")})[:5]
+        industries = list({exp.get("industry") for exp in work_experiences_raw if exp.get("industry")})[:5]
         addr = src.get("address") or ""
+
+        work_experiences = [
+            WorkExperienceItem(
+                raw_title=exp.get("raw_title", ""),
+                standardized_title=exp.get("standardized_title", ""),
+                industry=exp.get("industry", ""),
+                start_year=exp.get("start_year"),
+                end_year=exp.get("end_year"),
+                years_in_role=exp.get("years_in_role"),
+                weighted_years=exp.get("weighted_years"),
+            )
+            for exp in work_experiences_raw
+        ]
+        languages = [
+            CandidateLanguage(lang=lg.get("lang", ""), degree=lg.get("degree", ""))
+            for lg in (src.get("languages") or [])
+        ]
+        rank_explanation = _build_rank_explanation(src, req, i + 1, breakdown, weights)
+
+        job_cats_primary = src.get("job_categories_primary")
+        job_cats_secondary = src.get("job_categories_secondary")
+        if isinstance(job_cats_primary, str):
+            job_cats_primary = [job_cats_primary] if job_cats_primary else []
+        if isinstance(job_cats_secondary, str):
+            job_cats_secondary = [job_cats_secondary] if job_cats_secondary else []
+        if not isinstance(job_cats_primary, list):
+            job_cats_primary = []
+        if not isinstance(job_cats_secondary, list):
+            job_cats_secondary = []
+
         matches.append(CandidateMatch(
             post_id=src.get("post_id", 0),
             score=breakdown,
@@ -151,6 +262,19 @@ def run_match(
             location=addr,
             pensum_desired=int(src.get("pensum_desired", 100) or 100),
             top_industries=industries,
+            rank=i + 1,
+            work_experiences=work_experiences,
+            skills_text=(src.get("skills_text") or "").strip(),
+            education_text=(src.get("education_text") or "").strip(),
+            languages=languages,
+            birth_year=src.get("birth_year"),
+            available_from=src.get("available_from"),
+            pensum_from=int(src.get("pensum_from", 0) or 0),
+            on_contract_basis=bool(src.get("on_contract_basis", False)),
+            retired=bool(src.get("retired", False)),
+            job_categories_primary=job_cats_primary,
+            job_categories_secondary=job_cats_secondary,
+            rank_explanation=rank_explanation,
         ))
 
     return MatchResponse(

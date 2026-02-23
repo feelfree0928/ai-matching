@@ -43,6 +43,21 @@ class ScoreBreakdown(BaseModel):
     language_score: float = 0.0
 
 
+class WorkExperienceItem(BaseModel):
+    raw_title: str = ""
+    standardized_title: str = ""
+    industry: str = ""
+    start_year: Optional[int] = None
+    end_year: Optional[int] = None
+    years_in_role: Optional[float] = None
+    weighted_years: Optional[float] = None
+
+
+class CandidateLanguage(BaseModel):
+    lang: str = ""
+    degree: str = ""
+
+
 class CandidateMatch(BaseModel):
     post_id: int
     score: ScoreBreakdown
@@ -52,6 +67,19 @@ class CandidateMatch(BaseModel):
     location: str = ""
     pensum_desired: int = 100
     top_industries: list[str] = Field(default_factory=list)
+    rank: int = 0
+    work_experiences: list[WorkExperienceItem] = Field(default_factory=list)
+    skills_text: str = ""
+    education_text: str = ""
+    languages: list[CandidateLanguage] = Field(default_factory=list)
+    birth_year: Optional[int] = None
+    available_from: Optional[str] = None
+    pensum_from: int = 0
+    on_contract_basis: bool = False
+    retired: bool = False
+    job_categories_primary: list[str] = Field(default_factory=list)
+    job_categories_secondary: list[str] = Field(default_factory=list)
+    rank_explanation: list[str] = Field(default_factory=list, description="Why ranked #N bullet points")
 
 
 class MatchResponse(BaseModel):
