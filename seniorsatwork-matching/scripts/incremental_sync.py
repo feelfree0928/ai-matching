@@ -119,7 +119,7 @@ def main() -> None:
     from etl.transformer import transform_candidate
     from etl.experience_scorer import apply_experience_scoring
     from embeddings.generator import add_embeddings_to_candidate
-        from es_layer.indexer import bulk_index_candidates, get_es_client
+    from es_layer.indexer import bulk_index_candidates, get_es_client
     from openai import OpenAI
     from tqdm import tqdm
 
