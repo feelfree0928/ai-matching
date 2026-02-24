@@ -1,0 +1,108 @@
+[
+  {
+    "id": "ACC-001",
+    "title": "Senior Accountant",
+    "description": "We need a senior accountant to manage full-cycle accounting, monthly closing, financial reporting, tax declarations and coordination with external auditors.",
+    "required_skills": "General ledger, accounts payable/receivable, monthly closing, financial statements, Swiss GAAP, SAP or Abacus",
+    "required_education": "Bachelor in Accounting, Finance or Business Administration",
+    "industry": "Finance / Banking",
+    "expected_seniority_level": "senior",
+    "location_lat": 47.3769,
+    "location_lon": 8.5417,
+    "radius_km": 50,
+    "pensum_min": 60,
+    "pensum_max": 100,
+    "required_languages": [{"name": "German", "min_level": "B2"}],
+    "max_results": 10,
+    "expect": {
+      "top1_title_keywords": ["buchhalter", "accountant", "rechnungswesen", "finanz", "controlling", "finance"],
+      "top3_industry_keywords": ["finance", "banking", "real estate", "insurance", "treuhand", "beratung"],
+      "min_top1_score": 60,
+      "max_rank_inversion": 1
+    }
+  },
+  {
+    "id": "MKT-001",
+    "title": "Head of Marketing",
+    "description": "We are looking for an experienced Head of Marketing to lead brand strategy, digital campaigns, content creation and a team of 5 marketing professionals.",
+    "required_skills": "Brand management, digital marketing, SEO/SEM, social media, team leadership, budgeting",
+    "industry": "Consumer Goods / Retail",
+    "expected_seniority_level": "manager",
+    "location_lat": 47.3769,
+    "location_lon": 8.5417,
+    "radius_km": 50,
+    "pensum_min": 80,
+    "pensum_max": 100,
+    "required_languages": [{"name": "German", "min_level": "B2"}],
+    "max_results": 10,
+    "expect": {
+      "top1_title_keywords": ["marketing", "brand", "markt", "kommunikation", "communication"],
+      "top3_industry_keywords": ["marketing", "consumer", "retail", "media", "medien", "kommunikation"],
+      "min_top1_score": 55,
+      "max_rank_inversion": 1
+    }
+  },
+  {
+    "id": "IT-001",
+    "title": "IT Project Manager",
+    "description": "We need an IT project manager to lead software implementation projects, coordinate with vendors and stakeholders, and ensure on-time delivery.",
+    "required_skills": "Project management, agile/scrum, stakeholder management, software delivery, JIRA, risk management",
+    "industry": "IT / Software",
+    "expected_seniority_level": "manager",
+    "location_lat": 47.3769,
+    "location_lon": 8.5417,
+    "radius_km": 80,
+    "pensum_min": 80,
+    "pensum_max": 100,
+    "required_languages": [{"name": "German", "min_level": "B2"}],
+    "max_results": 10,
+    "expect": {
+      "top1_title_keywords": ["project", "it ", "software", "informatik", "digital", "programm", "projek"],
+      "top3_industry_keywords": ["it", "software", "technology", "tech", "informatik", "digital"],
+      "min_top1_score": 55,
+      "max_rank_inversion": 2
+    }
+  },
+  {
+    "id": "HR-001",
+    "title": "HR Business Partner",
+    "description": "Searching for an experienced HR Business Partner to support business units with recruiting, performance management, HR development and change management.",
+    "required_skills": "Recruiting, talent management, performance reviews, HR development, employment law, change management",
+    "industry": "Human Resources",
+    "expected_seniority_level": "senior",
+    "location_lat": 47.3769,
+    "location_lon": 8.5417,
+    "radius_km": 50,
+    "pensum_min": 60,
+    "pensum_max": 100,
+    "required_languages": [{"name": "German", "min_level": "B2"}],
+    "max_results": 10,
+    "expect": {
+      "top1_title_keywords": ["hr", "human resources", "personal", "recruiting", "talent"],
+      "top3_industry_keywords": ["hr", "human", "personal", "consulting", "beratung"],
+      "min_top1_score": 55,
+      "max_rank_inversion": 1
+    }
+  },
+  {
+    "id": "CEO-001",
+    "title": "CEO / Managing Director",
+    "description": "We are looking for a seasoned CEO or Managing Director with a track record of leading mid-size companies (50-500 employees). P&L responsibility, board reporting, strategic planning.",
+    "required_skills": "P&L ownership, strategic planning, board management, M&A, fundraising, organizational leadership",
+    "industry": "General Management",
+    "expected_seniority_level": "executive",
+    "location_lat": 47.3769,
+    "location_lon": 8.5417,
+    "radius_km": 100,
+    "pensum_min": 60,
+    "pensum_max": 100,
+    "required_languages": [{"name": "German", "min_level": "B2"}],
+    "max_results": 10,
+    "expect": {
+      "top1_title_keywords": ["ceo", "geschäftsführ", "managing director", "vorsitzender", "president", "director"],
+      "top3_industry_keywords": [],
+      "min_top1_score": 60,
+      "max_rank_inversion": 1
+    }
+  }
+]
