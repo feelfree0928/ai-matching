@@ -90,7 +90,9 @@ def build_script_score(
     expected_seniority_int: int,
     weights: dict[str, float],
 ) -> dict:
-    """Build script_score for 7-dimension scoring (title, industry, experience, skills, seniority, education, language)."""
+    """Build script_score for 7-dimension scoring (title, industry, experience, skills, seniority, education, language).
+    Experience is scaled by titleRel^2 so that wrong-role experience (e.g. Azure DevOps for an AWS DevOps job)
+    does not outrank the right-role candidate with fewer years."""
     w_t = weights.get("title", 0.38)
     w_i = weights.get("industry", 0.19)
     w_e = weights.get("experience", 0.14)
@@ -107,7 +109,8 @@ def build_script_score(
                 double eduSim = doc['education_embedding'].size() == 0 ? 1.0 : cosineSimilarity(params.eduVec, 'education_embedding') + 1.0;
                 double years = doc['total_weighted_relevant_years'].size() > 0 ? doc['total_weighted_relevant_years'].value : 0.0;
                 double titleRel = 0.5 + 0.5 * (titleSim - 1.0);
-                double expScore = (2.0 / (1.0 + Math.exp(-0.2 * years))) * titleRel;
+                double titleRelSq = titleRel * titleRel;
+                double expScore = (2.0 / (1.0 + Math.exp(-0.2 * years))) * titleRelSq;
                 def candLvl = doc['seniority_level_int'].size() > 0 ? doc['seniority_level_int'].value : params.jobLvl;
                 def jobLvl = params.jobLvl;
                 double seniorityFit = Math.max(0.5, 1.0 - 0.15 * Math.abs(candLvl - jobLvl));
