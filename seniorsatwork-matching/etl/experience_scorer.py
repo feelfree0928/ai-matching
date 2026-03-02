@@ -49,4 +49,24 @@ def apply_experience_scoring(candidate: dict[str, Any]) -> dict[str, Any]:
 
     candidate["total_weighted_relevant_years"] = total_weighted
     candidate["aggregated_industry_parts"] = industry_parts
+
+    # Primary role = the single highest-weighted experience entry.
+    # Its title embedding is stored separately so Painless can compute a precise per-role
+    # title similarity rather than relying on the blended aggregated_title_embedding.
+    best_exp = None
+    best_w = -1.0
+    for exp in experiences:
+        w = float(exp.get("weighted_years", 0) or 0)
+        if w > best_w:
+            best_w = w
+            best_exp = exp
+
+    candidate["primary_role_title"] = (
+        (best_exp.get("standardized_title") or best_exp.get("raw_title") or "").strip()
+        if best_exp else ""
+    )
+    candidate["primary_role_weighted_years"] = best_w if best_exp else 0.0
+    # Secondary years = everything except the primary role
+    candidate["secondary_role_weighted_years"] = max(0.0, total_weighted - best_w)
+
     return candidate

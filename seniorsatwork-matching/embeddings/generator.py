@@ -91,7 +91,7 @@ def add_embeddings_to_candidate(
 ) -> dict[str, Any]:
     """
     Compute and set aggregated_title_embedding, aggregated_industry_embedding,
-    skills_embedding, education_embedding on candidate.
+    primary_role_title_embedding, skills_embedding, education_embedding on candidate.
     """
     experiences = candidate.get("work_experiences") or []
     # Title: weighted by recency_weight * years_in_role (prefer standardized, fall back to raw)
@@ -112,6 +112,22 @@ def add_embeddings_to_candidate(
         title_items, client, cache_path
     ) if title_items else None
     # Fallback: no work history at all – use skills or generic so candidate can still be indexed
+    if candidate.get("aggregated_title_embedding") is None:
+        pass  # handled below
+
+    # Primary role title embedding: embed only the single highest-weighted role title.
+    # Stored separately so Painless can compute an isolated per-role cosine similarity
+    # instead of relying on the blended aggregated vector.
+    primary_role_title = (candidate.get("primary_role_title") or "").strip()
+    if primary_role_title and primary_role_title != "NONE":
+        candidate["primary_role_title_embedding"] = embed_text(primary_role_title, client, cache_path)
+    elif title_items:
+        # Fall back to the highest-weight title from the title_items list
+        best = max(title_items, key=lambda x: x[1])
+        candidate["primary_role_title_embedding"] = embed_text(best[0], client, cache_path)
+    else:
+        candidate["primary_role_title_embedding"] = None
+
     if candidate.get("aggregated_title_embedding") is None:
         fallback_text = (candidate.get("skills_text") or "").strip()[:500] or "Professional"
         candidate["aggregated_title_embedding"] = embed_text(fallback_text, client, cache_path)
