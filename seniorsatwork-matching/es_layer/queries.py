@@ -91,33 +91,62 @@ def build_script_score(
     weights: dict[str, float],
 ) -> dict:
     """Build script_score for 7-dimension scoring (title, industry, experience, skills, seniority, education, language).
-    Experience is scaled by titleRel^2 so that wrong-role experience (e.g. Azure DevOps for an AWS DevOps job)
-    does not outrank the right-role candidate with fewer years."""
-    w_t = weights.get("title", 0.38)
-    w_i = weights.get("industry", 0.19)
+
+    Experience uses a two-part model (Fix D):
+      - Primary role (highest weighted_years single role): scored against its OWN title embedding.
+        Only the primary role's cosine similarity to the job title gates its experience credit.
+      - Secondary roles (all other experience combined): gated by the blended aggregated title
+        similarity AND an additional 0.3 discount, so career breadth adds a small signal but
+        can never override a primary-role title mismatch.
+
+    The titleRel floor is 0.2 (not 0.5) so unrelated candidates receive ~4% of experience credit
+    (titleRelSq = 0.04) instead of 25%.
+    """
+    w_t = weights.get("title", 0.48)
+    w_i = weights.get("industry", 0.12)
     w_e = weights.get("experience", 0.14)
-    w_s = weights.get("skills", 0.10)
-    w_sen = weights.get("seniority", 0.07)
-    w_edu = weights.get("education", 0.07)
-    w_lang = weights.get("language", 0.05)
+    w_s = weights.get("skills", 0.12)
+    w_sen = weights.get("seniority", 0.06)
+    w_edu = weights.get("education", 0.05)
+    w_lang = weights.get("language", 0.03)
     return {
         "script": {
             "source": """
-                double titleSim = doc['aggregated_title_embedding'].size() == 0 ? 1.0 : cosineSimilarity(params.titleVec, 'aggregated_title_embedding') + 1.0;
-                double industrySim = doc['aggregated_industry_embedding'].size() == 0 ? 1.0 : cosineSimilarity(params.industryVec, 'aggregated_industry_embedding') + 1.0;
-                double skillsSim = doc['skills_embedding'].size() == 0 ? 1.0 : cosineSimilarity(params.skillsVec, 'skills_embedding') + 1.0;
-                double eduSim = doc['education_embedding'].size() == 0 ? 1.0 : cosineSimilarity(params.eduVec, 'education_embedding') + 1.0;
-                double years = doc['total_weighted_relevant_years'].size() > 0 ? doc['total_weighted_relevant_years'].value : 0.0;
-                double titleRel = 0.5 + 0.5 * (titleSim - 1.0);
-                double titleRelSq = titleRel * titleRel;
-                double expScore = (2.0 / (1.0 + Math.exp(-0.2 * years))) * titleRelSq;
+                double titleSim = doc['aggregated_title_embedding'].size() == 0 ? 1.0
+                    : cosineSimilarity(params.titleVec, 'aggregated_title_embedding') + 1.0;
+                double industrySim = doc['aggregated_industry_embedding'].size() == 0 ? 1.0
+                    : cosineSimilarity(params.industryVec, 'aggregated_industry_embedding') + 1.0;
+                double skillsSim = doc['skills_embedding'].size() == 0 ? 1.0
+                    : cosineSimilarity(params.skillsVec, 'skills_embedding') + 1.0;
+                double eduSim = doc['education_embedding'].size() == 0 ? 1.0
+                    : cosineSimilarity(params.eduVec, 'education_embedding') + 1.0;
+
+                double primYears = doc['primary_role_weighted_years'].size() > 0
+                    ? doc['primary_role_weighted_years'].value : 0.0;
+                double secYears = doc['secondary_role_weighted_years'].size() > 0
+                    ? doc['secondary_role_weighted_years'].value : 0.0;
+
+                double primTitleSim = doc['primary_role_title_embedding'].size() == 0 ? titleSim
+                    : cosineSimilarity(params.titleVec, 'primary_role_title_embedding') + 1.0;
+                double primRel    = Math.max(0.2, primTitleSim - 1.0);
+                double primRelSq  = primRel * primRel;
+                double expPrimary = (2.0 / (1.0 + Math.exp(-0.25 * primYears))) * primRelSq;
+
+                double aggRel    = Math.max(0.2, titleSim - 1.0);
+                double aggRelSq  = aggRel * aggRel;
+                double expSecondary = (2.0 / (1.0 + Math.exp(-0.20 * secYears))) * aggRelSq * 0.30;
+
+                double expScore = expPrimary + expSecondary;
+
                 def candLvl = doc['seniority_level_int'].size() > 0 ? doc['seniority_level_int'].value : params.jobLvl;
                 def jobLvl = params.jobLvl;
                 double seniorityFit = Math.max(0.5, 1.0 - 0.15 * Math.abs(candLvl - jobLvl));
                 double langLvl = doc['language_level_max'].size() > 0 ? doc['language_level_max'].value : 0.0;
                 double langScore = 1.0 + langLvl / 7.0;
+
                 return (params.wT * titleSim) + (params.wI * industrySim) + (params.wE * expScore)
-                     + (params.wS * skillsSim) + (params.wSen * seniorityFit * 2.0) + (params.wEdu * eduSim) + (params.wLang * langScore);
+                     + (params.wS * skillsSim) + (params.wSen * seniorityFit * 2.0)
+                     + (params.wEdu * eduSim) + (params.wLang * langScore);
             """,
             "params": {
                 "titleVec": title_vec,

@@ -9,17 +9,18 @@ import os
 CONFIG_PATH = os.getenv("CONFIG_PATH", os.path.join(os.path.dirname(__file__), "..", "config.json"))
 
 DEFAULT_WEIGHTS = {
-    "title": 0.38,
-    "industry": 0.19,
+    "title":      0.48,   # raised from 0.38 — title match is the dominant signal
+    "industry":   0.12,   # lowered from 0.19 — prevent industry from overriding bad title match
     "experience": 0.14,
-    "skills": 0.10,
-    "seniority": 0.07,
-    "education": 0.07,
-    "language": 0.05,
+    "skills":     0.12,   # raised from 0.10
+    "seniority":  0.06,   # lowered slightly
+    "education":  0.05,   # lowered slightly
+    "language":   0.03,   # lowered slightly
 }
 
-# Raw score threshold (on script_score scale ~0..2). 1.55 ≈ 55/100 normalized.
-DEFAULT_MIN_SCORE_RAW = 1.55
+# Raw score threshold (on script_score scale ~0..2). 1.65 ≈ 82.5/100 normalized.
+# Raised from 1.55 to cut borderline/unrelated candidates.
+DEFAULT_MIN_SCORE_RAW = 1.65
 DEFAULT_MAX_RESULTS = 20
 
 

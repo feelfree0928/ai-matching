@@ -55,6 +55,15 @@ CANDIDATES_MAPPING = {
             "similarity": "cosine",
         },
         "total_weighted_relevant_years": {"type": "float"},
+        "primary_role_weighted_years": {"type": "float"},
+        "secondary_role_weighted_years": {"type": "float"},
+        "primary_role_title": {"type": "keyword"},
+        "primary_role_title_embedding": {
+            "type": "dense_vector",
+            "dims": DENSE_DIMS,
+            "index": True,
+            "similarity": "cosine",
+        },
         "skills_embedding": {
             "type": "dense_vector",
             "dims": DENSE_DIMS,

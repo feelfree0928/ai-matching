@@ -148,6 +148,7 @@ def run_match(
     source_excludes = [
         "aggregated_title_embedding",
         "aggregated_industry_embedding",
+        "primary_role_title_embedding",
         "skills_embedding",
         "education_embedding",
     ]
