@@ -9,9 +9,9 @@ import os
 CONFIG_PATH = os.getenv("CONFIG_PATH", os.path.join(os.path.dirname(__file__), "..", "config.json"))
 
 DEFAULT_WEIGHTS = {
-    "title":      0.23,   # reduced so experience + industry can overtake title-only similarity
-    "industry":   0.17,   # raised so Financial vs Education/Automotive clearly affects ranking (Senior Accountant)
-    "experience": 0.25,   # many-yr relevant role (e.g. Accountant) can beat short exact-title match
+    "title":      0.20,   # reduced so industry + experience can overtake title-only (Senior Accountant)
+    "industry":   0.20,   # raised so Financial vs Education/Automotive clearly affects ranking
+    "experience": 0.25,
     "skills":     0.20,
     "seniority":  0.07,
     "education":  0.05,
