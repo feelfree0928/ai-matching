@@ -341,7 +341,7 @@ def run_match(
     matches.sort(
         key=lambda m: (
             -(m.score.total or 0),
-            0 if (m.most_relevant_role or "").strip().upper() == "NONE" else 1,
+            0 if (m.most_relevant_role or "").strip().upper() == "NONE" else -1,
         )
     )
     matches = [m.model_copy(update={"rank": i + 1}) for i, m in enumerate(matches)]
