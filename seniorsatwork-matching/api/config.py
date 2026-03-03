@@ -9,18 +9,18 @@ import os
 CONFIG_PATH = os.getenv("CONFIG_PATH", os.path.join(os.path.dirname(__file__), "..", "config.json"))
 
 DEFAULT_WEIGHTS = {
-    "title":      0.48,   # raised from 0.38 — title match is the dominant signal
-    "industry":   0.12,   # lowered from 0.19 — prevent industry from overriding bad title match
-    "experience": 0.14,
-    "skills":     0.12,   # raised from 0.10
-    "seniority":  0.06,   # lowered slightly
-    "education":  0.05,   # lowered slightly
-    "language":   0.03,   # lowered slightly
+    "title":      0.35,   # reduced from 0.48 — prevent single exact-title-match from dominating
+    "industry":   0.12,
+    "experience": 0.22,   # raised from 0.14 — reward depth and recency of relevant experience
+    "skills":     0.16,   # raised from 0.12 — reward candidates with documented matching skills
+    "seniority":  0.07,   # raised slightly
+    "education":  0.05,
+    "language":   0.03,
 }
 
-# Raw score threshold (on script_score scale ~0..2). 1.65 ≈ 82.5/100 normalized.
-# Raised from 1.55 to cut borderline/unrelated candidates.
-DEFAULT_MIN_SCORE_RAW = 1.65
+# Raw score threshold (on script_score scale ~0..2). 1.55 ≈ 77.5/100 normalized.
+# Lowered from 1.65 to compensate for reduced title ceiling.
+DEFAULT_MIN_SCORE_RAW = 1.55
 DEFAULT_MAX_RESULTS = 20
 
 

@@ -11,7 +11,7 @@ from es_layer.indexer import get_es_client
 from es_layer.mappings import CANDIDATES_INDEX, SENIORITY_TO_INT
 from es_layer.queries import build_hard_filters, build_script_score
 
-from api.config import get_max_results, get_min_score_raw, get_weights
+from api.config import DEFAULT_WEIGHTS, get_max_results, get_min_score_raw, get_weights
 from api.models import (
     CandidateLanguage,
     CandidateMatch,
@@ -48,7 +48,7 @@ def _build_rank_explanation(
     bullets: list[str] = []
     job_title_words = set((req.title or "").lower().split())
     work_experiences = src.get("work_experiences") or []
-    industries = list({exp.get("industry") for exp in work_experiences if exp.get("industry")})
+    industries = list(dict.fromkeys(exp.get("industry") for exp in work_experiences if exp.get("industry")))
     job_industry_words = set((req.industry or "").lower().split())
     cand_seniority = (src.get("seniority_level") or "").strip().lower()
     job_seniority = (req.expected_seniority_level or "senior").strip().lower()
@@ -72,7 +72,7 @@ def _build_rank_explanation(
     # Experience
     years = float(src.get("total_weighted_relevant_years", 0) or 0)
     if years > 0:
-        bullets.append(f"{years:.0f} years of relevant experience")
+        bullets.append(f"~{years:.0f} yrs weighted experience")
 
     # Industry
     for ind in industries[:3]:
@@ -209,20 +209,20 @@ def run_match(
         w = weights
         breakdown = ScoreBreakdown(
             total=round(total_norm, 1),
-            title_score=round(total_norm * w.get("title", 0.38), 1),
-            industry_score=round(total_norm * w.get("industry", 0.19), 1),
-            experience_score=round(total_norm * w.get("experience", 0.14), 1),
-            skills_score=round(total_norm * w.get("skills", 0.1), 1),
-            seniority_score=round(total_norm * w.get("seniority", 0.07), 1),
-            education_score=round(total_norm * w.get("education", 0.07), 1),
-            language_score=round(total_norm * w.get("language", 0.05), 1),
+            title_score=round(total_norm * w.get("title", DEFAULT_WEIGHTS["title"]), 1),
+            industry_score=round(total_norm * w.get("industry", DEFAULT_WEIGHTS["industry"]), 1),
+            experience_score=round(total_norm * w.get("experience", DEFAULT_WEIGHTS["experience"]), 1),
+            skills_score=round(total_norm * w.get("skills", DEFAULT_WEIGHTS["skills"]), 1),
+            seniority_score=round(total_norm * w.get("seniority", DEFAULT_WEIGHTS["seniority"]), 1),
+            education_score=round(total_norm * w.get("education", DEFAULT_WEIGHTS["education"]), 1),
+            language_score=round(total_norm * w.get("language", DEFAULT_WEIGHTS["language"]), 1),
         )
         work_experiences_raw = src.get("work_experiences") or []
         most_relevant = ""
         if work_experiences_raw:
             best = max(work_experiences_raw, key=lambda x: float(x.get("weighted_years", 0) or 0))
             most_relevant = best.get("standardized_title") or best.get("raw_title") or ""
-        industries = list({exp.get("industry") for exp in work_experiences_raw if exp.get("industry")})[:5]
+        industries = list(dict.fromkeys(exp.get("industry") for exp in work_experiences_raw if exp.get("industry")))[:5]
         addr = src.get("address") or ""
 
         work_experiences = [
