@@ -18,10 +18,11 @@ DEFAULT_WEIGHTS = {
     "language":   0.03,
 }
 
-# Raw score threshold (on script_score scale ~0..2). 1.55 ≈ 77.5/100 normalized.
-# Lowered from 1.65 to compensate for reduced title ceiling.
-DEFAULT_MIN_SCORE_RAW = 1.55
-DEFAULT_MAX_RESULTS = 20
+# Raw score threshold (on script_score scale ~0..2). 1.45 ≈ 72.5/100 normalized.
+# Lowered to compensate for reduced title ceiling (title weight 0.48→0.35 lowers raw scores).
+# Acts as an upper cap: stored config values higher than this are ignored automatically.
+DEFAULT_MIN_SCORE_RAW = 1.45
+DEFAULT_MAX_RESULTS = 5
 
 
 def load_config() -> dict:
@@ -49,7 +50,10 @@ def get_weights() -> dict[str, float]:
 
 
 def get_min_score_raw() -> float:
-    return float(load_config().get("min_score_raw", DEFAULT_MIN_SCORE_RAW))
+    # Cap stored value at DEFAULT_MIN_SCORE_RAW so code-side threshold reductions
+    # take effect immediately even when an older config.json has a higher value.
+    stored = float(load_config().get("min_score_raw", DEFAULT_MIN_SCORE_RAW))
+    return min(stored, DEFAULT_MIN_SCORE_RAW)
 
 
 def get_max_results() -> int:

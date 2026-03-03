@@ -152,8 +152,12 @@ def run_match(
         "skills_embedding",
         "education_embedding",
     ]
-    try:
-        resp = es.search(
+    # Progressive threshold fallback: if configured threshold yields 0 results,
+    # retry with lower thresholds so niche job postings always return candidates.
+    _FALLBACK_THRESHOLDS = [1.30, 1.15]
+
+    def _do_search(min_s: float):
+        return es.search(
             index=index_name,
             query={
                 "script_score": {
@@ -161,10 +165,21 @@ def run_match(
                     "script": script["script"],
                 }
             },
-            min_score=effective_min_score,
+            min_score=min_s,
             size=max_results,
             source_excludes=source_excludes,
         )
+
+    try:
+        resp = _do_search(effective_min_score)
+        # If nothing came back, progressively lower the threshold
+        if not resp.get("hits", {}).get("hits"):
+            for fallback in _FALLBACK_THRESHOLDS:
+                if fallback >= effective_min_score:
+                    continue
+                resp = _do_search(fallback)
+                if resp.get("hits", {}).get("hits"):
+                    break
     except BadRequestError as e:
         detail = str(e)
         try:
