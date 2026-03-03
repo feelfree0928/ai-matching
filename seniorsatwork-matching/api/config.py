@@ -9,13 +9,13 @@ import os
 CONFIG_PATH = os.getenv("CONFIG_PATH", os.path.join(os.path.dirname(__file__), "..", "config.json"))
 
 DEFAULT_WEIGHTS = {
-    "title":      0.12,   # industry + experience dominate so Real Estate/Property Accountant (Immobilien) beats Securities (Banken)
-    "industry":   0.30,   # Real Estate job: Immobilien candidates must clearly outrank Banken/Medien/Non-Profit
-    "experience": 0.25,
-    "skills":     0.20,
-    "seniority":  0.07,
-    "education":  0.05,
-    "language":   0.00,
+    "title":      0.15,   # role alignment; typical industry balance
+    "industry":   0.12,   # sector fit
+    "experience": 0.25,   # years + relevance
+    "skills":     0.35,   # primary signal (highest weight)
+    "seniority":  0.06,   # level match
+    "education":  0.05,   # degree/certifications
+    "language":   0.02,   # minimal
 }
 
 # Raw score threshold (on script_score scale ~0..2). 1.45 ≈ 72.5/100 normalized.
