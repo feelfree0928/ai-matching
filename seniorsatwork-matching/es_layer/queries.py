@@ -102,8 +102,8 @@ def build_script_score(
     The titleRel floor is 0.2 (not 0.5) so unrelated candidates receive ~4% of experience credit
     (titleRelSq = 0.04) instead of 25%.
     """
-    w_t = weights.get("title", 0.28)
-    w_i = weights.get("industry", 0.12)
+    w_t = weights.get("title", 0.23)
+    w_i = weights.get("industry", 0.17)
     w_e = weights.get("experience", 0.25)
     w_s = weights.get("skills", 0.20)
     w_sen = weights.get("seniority", 0.07)
@@ -131,7 +131,9 @@ def build_script_score(
                 double primRel    = Math.max(0.2, primTitleSim - 1.0);
                 double primRelSq  = primRel * primRel;
                 double yearsCap   = Math.min(1.0, primYears / 5.0);
-                double expPrimary = (2.0 / (1.0 + Math.exp(-0.25 * primYears))) * primRelSq * yearsCap;
+                def primTitle = doc['primary_role_title'].size() > 0 ? doc['primary_role_title'].value : '';
+                double nonePenalty = (primTitle == 'NONE') ? 0.5 : 1.0;
+                double expPrimary = (2.0 / (1.0 + Math.exp(-0.25 * primYears))) * primRelSq * yearsCap * nonePenalty;
 
                 double aggRel    = Math.max(0.2, titleSim - 1.0);
                 double aggRelSq  = aggRel * aggRel;
