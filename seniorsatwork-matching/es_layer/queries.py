@@ -102,13 +102,13 @@ def build_script_score(
     The titleRel floor is 0.2 (not 0.5) so unrelated candidates receive ~4% of experience credit
     (titleRelSq = 0.04) instead of 25%.
     """
-    w_t = weights.get("title", 0.48)
+    w_t = weights.get("title", 0.31)
     w_i = weights.get("industry", 0.12)
-    w_e = weights.get("experience", 0.14)
-    w_s = weights.get("skills", 0.12)
-    w_sen = weights.get("seniority", 0.06)
+    w_e = weights.get("experience", 0.22)
+    w_s = weights.get("skills", 0.20)
+    w_sen = weights.get("seniority", 0.07)
     w_edu = weights.get("education", 0.05)
-    w_lang = weights.get("language", 0.03)
+    w_lang = weights.get("language", 0.00)
     return {
         "script": {
             "source": """

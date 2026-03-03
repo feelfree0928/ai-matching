@@ -9,13 +9,13 @@ import os
 CONFIG_PATH = os.getenv("CONFIG_PATH", os.path.join(os.path.dirname(__file__), "..", "config.json"))
 
 DEFAULT_WEIGHTS = {
-    "title":      0.35,   # reduced from 0.48 — prevent single exact-title-match from dominating
+    "title":      0.31,   # lowered so skills can differentiate when titles are similar (e.g. DevOps vs Software)
     "industry":   0.12,
-    "experience": 0.22,   # raised from 0.14 — reward depth and recency of relevant experience
-    "skills":     0.16,   # raised from 0.12 — reward candidates with documented matching skills
-    "seniority":  0.07,   # raised slightly
+    "experience": 0.22,
+    "skills":     0.20,   # raised so DevOps/SRE skills (AWS, Kubernetes, etc.) overtake generic dev profiles
+    "seniority":  0.07,
     "education":  0.05,
-    "language":   0.03,
+    "language":   0.00,
 }
 
 # Raw score threshold (on script_score scale ~0..2). 1.45 ≈ 72.5/100 normalized.
