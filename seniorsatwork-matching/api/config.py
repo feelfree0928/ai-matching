@@ -9,8 +9,8 @@ import os
 CONFIG_PATH = os.getenv("CONFIG_PATH", os.path.join(os.path.dirname(__file__), "..", "config.json"))
 
 DEFAULT_WEIGHTS = {
-    "title":      0.16,   # industry + mapped title must outweigh NONE + wrong industry (Senior Accountant)
-    "industry":   0.24,   # Financial (Banken) vs Education/Automotive must decide #3 vs #4
+    "title":      0.14,   # so industry + role specificity (Real Estate vs Securities) can decide ranking
+    "industry":   0.27,   # Real Estate job + Immobilien candidate must beat Real Estate job + Banken
     "experience": 0.25,
     "skills":     0.20,
     "seniority":  0.07,
