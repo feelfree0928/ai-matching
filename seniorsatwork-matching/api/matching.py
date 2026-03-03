@@ -30,7 +30,13 @@ def _zero_vec():
 def _job_embeddings(req: JobMatchRequest, client=None):
     from openai import OpenAI
     c = client or OpenAI()
-    title_vec = embed_text(req.title or " ", c) if req.title else _zero_vec()
+    # Enrich title with role context from required_skills so "Senior DevOps Engineer" + AWS/Terraform
+    # is closer to DevOps/SRE candidates than generic "Senior Software Engineer"
+    title_text = (req.title or "").strip() or " "
+    if req.required_skills and (req.required_skills or "").strip():
+        skills_snippet = (req.required_skills or "").replace("\n", " ").strip()[:200]
+        title_text = f"{title_text}. Key requirements: {skills_snippet}"
+    title_vec = embed_text(title_text, c)
     industry_vec = embed_text(req.industry or " ", c) if req.industry else _zero_vec()
     skills_vec = embed_text(req.required_skills or " ", c) if req.required_skills else _zero_vec()
     edu_vec = embed_text(req.required_education or " ", c) if req.required_education else _zero_vec()
