@@ -9,8 +9,8 @@ import os
 CONFIG_PATH = os.getenv("CONFIG_PATH", os.path.join(os.path.dirname(__file__), "..", "config.json"))
 
 DEFAULT_WEIGHTS = {
-    "title":      0.14,   # so industry + role specificity (Real Estate vs Securities) can decide ranking
-    "industry":   0.27,   # Real Estate job + Immobilien candidate must beat Real Estate job + Banken
+    "title":      0.12,   # industry + experience dominate so Real Estate/Property Accountant (Immobilien) beats Securities (Banken)
+    "industry":   0.30,   # Real Estate job: Immobilien candidates must clearly outrank Banken/Medien/Non-Profit
     "experience": 0.25,
     "skills":     0.20,
     "seniority":  0.07,
