@@ -12,6 +12,7 @@ from es_layer.mappings import CANDIDATES_INDEX, SENIORITY_TO_INT
 from es_layer.queries import build_hard_filters, build_script_score
 
 from api.config import DEFAULT_WEIGHTS, get_max_results, get_min_score_raw, get_weights
+from api.rerank import rerank_candidates
 from api.models import (
     CandidateLanguage,
     CandidateMatch,
@@ -121,6 +122,8 @@ def run_match(
 ) -> MatchResponse:
     """
     Run matching: hard filters + script_score, return ranked shortlist with score breakdown.
+    LLM re-ranking is always applied after ES: candidates are re-ordered by a recruiter-style
+    model and completely irrelevant candidates are dropped.
     index: optional index name (default CANDIDATES_INDEX); used for golden test.
     """
     es = es or get_es_client()
@@ -348,8 +351,12 @@ def run_match(
     )
     matches = [m.model_copy(update={"rank": i + 1}) for i, m in enumerate(matches)]
 
+    # LLM re-rank: recruiter-style ordering and drop completely irrelevant candidates (always on)
+    matches = rerank_candidates(req, matches)
+    matches = [m.model_copy(update={"rank": i + 1}) for i, m in enumerate(matches)]
+
     return MatchResponse(
         matches=matches,
         message=None if matches else "No qualified candidates found above threshold.",
-        total_above_threshold=total_val,
+        total_above_threshold=len(matches),
     )
