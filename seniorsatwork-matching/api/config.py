@@ -9,8 +9,8 @@ import os
 CONFIG_PATH = os.getenv("CONFIG_PATH", os.path.join(os.path.dirname(__file__), "..", "config.json"))
 
 DEFAULT_WEIGHTS = {
-    "title":      0.20,   # reduced so industry + experience can overtake title-only (Senior Accountant)
-    "industry":   0.20,   # raised so Financial vs Education/Automotive clearly affects ranking
+    "title":      0.18,   # reduced so industry clearly outweighs title when industry mismatches (Senior Accountant)
+    "industry":   0.22,   # Financial vs Education/Automotive must swing ranking; #4 (Banken) above #3 (Non-Profit)
     "experience": 0.25,
     "skills":     0.20,
     "seniority":  0.07,
