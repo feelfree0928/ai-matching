@@ -9,9 +9,9 @@ import os
 CONFIG_PATH = os.getenv("CONFIG_PATH", os.path.join(os.path.dirname(__file__), "..", "config.json"))
 
 DEFAULT_WEIGHTS = {
-    "title":      0.31,   # lowered so skills can differentiate when titles are similar (e.g. DevOps vs Software)
+    "title":      0.28,   # lean slightly less on title so experience depth can overtake exact title + 1 yr
     "industry":   0.12,
-    "experience": 0.22,
+    "experience": 0.25,   # raised so many-yr near-match (e.g. Accountant) beats 1-yr exact match (Senior Accountant)
     "skills":     0.20,   # raised so DevOps/SRE skills (AWS, Kubernetes, etc.) overtake generic dev profiles
     "seniority":  0.07,
     "education":  0.05,
