@@ -28,7 +28,7 @@ class JobMatchRequest(BaseModel):
     pensum_max: int = 100
     required_languages: list[LanguageRequirement] = Field(default_factory=list)
     required_available_before: Optional[str] = Field(default=None, description="ISO date (yyyy-MM-dd); only candidates available on or before this date pass")
-    max_results: int = 20
+    max_results: Optional[int] = None
     min_score: Optional[float] = None
 
 
