@@ -286,7 +286,6 @@ def run_match(
             score=breakdown,
             rank=i + 1,
             rank_explanation=rank_explanation,
-            # identity & contact
             candidate_name=(src.get("candidate_name") or "").strip(),
             phone=(src.get("phone") or "").strip(),
             gender=(src.get("gender") or "").strip(),
@@ -337,6 +336,15 @@ def run_match(
             featured=bool(src.get("featured", False)),
             post_date=src.get("post_date"),
         ))
+
+    # Tie-break: when scores are equal, prefer candidates with a mapped role (most_relevant_role != NONE)
+    matches.sort(
+        key=lambda m: (
+            -(m.score.total or 0),
+            0 if (m.most_relevant_role or "").strip().upper() == "NONE" else 1,
+        )
+    )
+    matches = [m.model_copy(update={"rank": i + 1}) for i, m in enumerate(matches)]
 
     return MatchResponse(
         matches=matches,
