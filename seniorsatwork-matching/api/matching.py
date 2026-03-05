@@ -22,6 +22,7 @@ from api.models import (
 )
 from api.score_breakdown import compute_breakdown, has_breakdown_data
 from embeddings.generator import embed_text
+from api.title_match import normalize_job_title_for_matching, score_title_fit_batch
 
 # Default zero vector when job has no text for a dimension
 def _zero_vec():
@@ -31,14 +32,13 @@ def _zero_vec():
 def _job_embeddings(req: JobMatchRequest, client=None):
     from openai import OpenAI
     c = client or OpenAI()
-    # Enrich title with role context so specific roles (e.g. Real Estate Accountant) rank above generic (Securities Accountant)
-    title_text = (req.title or "").strip() or " "
-    if req.industry and (req.industry or "").strip():
-        industry_snippet = (req.industry or "").replace("\n", " ").strip()[:100]
-        title_text = f"{title_text} in {industry_snippet}"
-    if req.required_skills and (req.required_skills or "").strip():
-        skills_snippet = (req.required_skills or "").replace("\n", " ").strip()[:200]
-        title_text = f"{title_text}. Key requirements: {skills_snippet}"
+    # Title-only vector for the title dimension: do NOT mix in industry or skills,
+    # so we compare job title to candidate title directly (fixes e.g. Night Receptionist
+    # ranking below Job Assistant when the job is for night receptionist).
+    # Optional: normalize job title with LLM first (handles "Nacht Rezeptionist/in (m/w/d)" etc.).
+    raw_title = (req.title or "").strip() or " "
+    normalized_title = normalize_job_title_for_matching(raw_title, c)
+    title_text = normalized_title if normalized_title else raw_title
     title_vec = embed_text(title_text, c)
     industry_vec = embed_text(req.industry or " ", c) if req.industry else _zero_vec()
     skills_vec = embed_text(req.required_skills or " ", c) if req.required_skills else _zero_vec()
@@ -409,13 +409,41 @@ def run_match(
             post_date=src.get("post_date"),
         ))
 
-    # Tie-break: when scores are equal, prefer candidates with a mapped role (most_relevant_role != NONE)
-    matches.sort(
-        key=lambda m: (
-            -(m.score.total or 0),
-            0 if (m.most_relevant_role or "").strip().upper() == "NONE" else -1,
+    # LLM title-fit: score how well each candidate's main role matches the job title (no re-embedding).
+    # Blends into ranking so e.g. Night Receptionist ranks above Job Assistant for a night receptionist job.
+    did_llm_resort = False
+    if matches:
+        try:
+            from openai import OpenAI
+            llm_client = OpenAI()
+            job_title_for_llm = (req.title or "").strip()
+            title_fit_scores = score_title_fit_batch(job_title_for_llm, matches, llm_client)
+            if title_fit_scores:
+                combined = []
+                for m in matches:
+                    fit = title_fit_scores.get(m.post_id, 5.0)
+                    new_breakdown = m.score.model_copy(update={"llm_title_fit": round(fit, 1)})
+                    combined.append(m.model_copy(update={"score": new_breakdown}))
+                # Sort by 80% ES-derived total + 20% LLM title fit (0-10 -> 0-100 scale)
+                combined.sort(
+                    key=lambda m: (
+                        -(0.8 * (m.score.total or 0) + 0.2 * ((m.score.llm_title_fit or 5) / 10.0) * 100),
+                        0 if (m.most_relevant_role or "").strip().upper() == "NONE" else -1,
+                    )
+                )
+                matches = combined
+                did_llm_resort = True
+        except Exception:
+            pass
+
+    # Tie-break when we did not use LLM resort: prefer candidates with a mapped role (most_relevant_role != NONE)
+    if not did_llm_resort:
+        matches.sort(
+            key=lambda m: (
+                -(m.score.total or 0),
+                0 if (m.most_relevant_role or "").strip().upper() == "NONE" else -1,
+            )
         )
-    )
     matches = [m.model_copy(update={"rank": i + 1}) for i, m in enumerate(matches)]
 
     return MatchResponse(

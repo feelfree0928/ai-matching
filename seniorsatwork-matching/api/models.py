@@ -62,6 +62,11 @@ class ScoreBreakdown(BaseModel):
         default=None,
         description="Experience sub-components for tooltips: primary_years, secondary_years, primary_relevance, exp_primary, exp_secondary, none_penalty",
     )
+    # LLM title fit 0-10: how well the candidate's main role title matches the job title (no re-embedding).
+    llm_title_fit: Optional[float] = Field(
+        default=None,
+        description="Optional 0-10 score from LLM: title relevance of candidate's main role to job title",
+    )
 
 
 class WorkExperienceItem(BaseModel):
