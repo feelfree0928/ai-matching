@@ -57,6 +57,11 @@ class ScoreBreakdown(BaseModel):
         default="",
         description="Formatted for UI: Score X (Title: v × w = c, ...)",
     )
+    # How experience was calculated (primary_years, secondary_years, exp_primary, exp_secondary, etc.)
+    experience_detail: Optional[dict[str, Any]] = Field(
+        default=None,
+        description="Experience sub-components for tooltips: primary_years, secondary_years, primary_relevance, exp_primary, exp_secondary, none_penalty",
+    )
 
 
 class WorkExperienceItem(BaseModel):

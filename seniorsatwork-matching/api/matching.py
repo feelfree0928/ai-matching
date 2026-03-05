@@ -20,6 +20,7 @@ from api.models import (
     ScoreBreakdown,
     WorkExperienceItem,
 )
+from api.score_breakdown import compute_breakdown, has_breakdown_data
 from embeddings.generator import embed_text
 
 # Default zero vector when job has no text for a dimension
@@ -157,15 +158,7 @@ def run_match(
 
     effective_min_score = req.min_score if req.min_score is not None else min_score
 
-    source_excludes = [
-        "aggregated_title_embedding",
-        "aggregated_industry_embedding",
-        "primary_role_title_embedding",
-        "skills_embedding",
-        "education_embedding",
-    ]
-    # Progressive threshold fallback: if configured threshold yields 0 results,
-    # retry with lower thresholds so niche job postings always return candidates.
+    # No source_excludes: we need embedding and scalar fields in _source to compute real score breakdown.
     _FALLBACK_THRESHOLDS = [1.30, 1.15]
 
     def _do_search(min_s: float):
@@ -179,7 +172,6 @@ def run_match(
             },
             min_score=min_s,
             size=max_results,
-            source_excludes=source_excludes,
         )
 
     try:
@@ -246,28 +238,60 @@ def run_match(
         total_norm = min(100.0, max(0.0, (score_raw / SCORE_RAW_REFERENCE) * 100.0))
         w = weights
 
-        # Per-dimension breakdown: Elasticsearch script_fields cannot use cosineSimilarity,
-        # so we always use the proportional breakdown (total × weight per dimension).
-        score_calculation = []
-        title_score = round(total_norm * w.get("title", DEFAULT_WEIGHTS["title"]), 1)
-        industry_score = round(total_norm * w.get("industry", DEFAULT_WEIGHTS["industry"]), 1)
-        experience_score = round(total_norm * w.get("experience", DEFAULT_WEIGHTS["experience"]), 1)
-        skills_score = round(total_norm * w.get("skills", DEFAULT_WEIGHTS["skills"]), 1)
-        seniority_score = round(total_norm * w.get("seniority", DEFAULT_WEIGHTS["seniority"]), 1)
-        education_score = round(total_norm * w.get("education", DEFAULT_WEIGHTS["education"]), 1)
-        language_score = round(total_norm * w.get("language", DEFAULT_WEIGHTS["language"]), 1)
-        for key, label in PARAM_ORDER:
-            weight = w.get(key, DEFAULT_WEIGHTS.get(key, 0))
-            contribution = round(total_norm * weight, 1)
-            score_calculation.append({
-                "parameter": label,
-                "value": round(total_norm, 3),
-                "weight": weight,
-                "contribution": contribution,
-            })
-        total_formula = "raw_score = Σ(value × weight); total = (raw_score / 1.4) × 100 (breakdown approximate)"
-        parts = [f"{c['parameter']}: {c['value']} × {c['weight']} = {c['contribution']}" for c in score_calculation]
-        score_display = f"Score {round(total_norm, 1)} ({', '.join(parts)})"
+        experience_detail = None
+        if has_breakdown_data(src):
+            breakdown_vals, experience_detail = compute_breakdown(
+                title_vec,
+                industry_vec,
+                skills_vec,
+                edu_vec,
+                job_seniority_int,
+                src,
+                include_experience_detail=True,
+            )
+            score_calculation = []
+            for key, label in PARAM_ORDER:
+                value = breakdown_vals.get(key, 0.0)
+                weight = w.get(key, DEFAULT_WEIGHTS.get(key, 0))
+                contrib_raw = value * weight
+                contribution = round((contrib_raw / score_raw * total_norm), 1) if score_raw else 0.0
+                score_calculation.append({
+                    "parameter": label,
+                    "value": round(value, 3),
+                    "weight": weight,
+                    "contribution": contribution,
+                })
+            title_score = round(breakdown_vals.get("title", 0), 3)
+            industry_score = round(breakdown_vals.get("industry", 0), 3)
+            experience_score = round(breakdown_vals.get("experience", 0), 3)
+            skills_score = round(breakdown_vals.get("skills", 0), 3)
+            seniority_score = round(breakdown_vals.get("seniority", 0), 3)
+            education_score = round(breakdown_vals.get("education", 0), 3)
+            language_score = round(breakdown_vals.get("language", 0), 3)
+            total_formula = "raw_score = Σ(value × weight); total = (raw_score / 1.4) × 100"
+            parts = [f"{c['parameter']}: {c['value']} × {c['weight']} = {c['contribution']}" for c in score_calculation]
+            score_display = f"Score {round(total_norm, 1)} ({', '.join(parts)})"
+        else:
+            score_calculation = []
+            title_score = round(total_norm * w.get("title", DEFAULT_WEIGHTS["title"]), 1)
+            industry_score = round(total_norm * w.get("industry", DEFAULT_WEIGHTS["industry"]), 1)
+            experience_score = round(total_norm * w.get("experience", DEFAULT_WEIGHTS["experience"]), 1)
+            skills_score = round(total_norm * w.get("skills", DEFAULT_WEIGHTS["skills"]), 1)
+            seniority_score = round(total_norm * w.get("seniority", DEFAULT_WEIGHTS["seniority"]), 1)
+            education_score = round(total_norm * w.get("education", DEFAULT_WEIGHTS["education"]), 1)
+            language_score = round(total_norm * w.get("language", DEFAULT_WEIGHTS["language"]), 1)
+            for key, label in PARAM_ORDER:
+                weight = w.get(key, DEFAULT_WEIGHTS.get(key, 0))
+                contribution = round(total_norm * weight, 1)
+                score_calculation.append({
+                    "parameter": label,
+                    "value": round(total_norm, 3),
+                    "weight": weight,
+                    "contribution": contribution,
+                })
+            total_formula = "raw_score = Σ(value × weight); total = (raw_score / 1.4) × 100 (breakdown approximate)"
+            parts = [f"{c['parameter']}: {c['value']} × {c['weight']} = {c['contribution']}" for c in score_calculation]
+            score_display = f"Score {round(total_norm, 1)} ({', '.join(parts)})"
 
         breakdown = ScoreBreakdown(
             total=round(total_norm, 1),
@@ -282,6 +306,7 @@ def run_match(
             total_formula=total_formula,
             score_calculation=score_calculation,
             score_display=score_display,
+            experience_detail=experience_detail,
         )
         work_experiences_raw = src.get("work_experiences") or []
         most_relevant = ""
