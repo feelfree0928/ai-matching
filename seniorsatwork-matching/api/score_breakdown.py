@@ -88,9 +88,12 @@ def compute_breakdown(
         doc_source.get("education_embedding"),
     )
 
-    # Experience: primary + secondary (same constants as Painless)
+    # Experience: primary + secondary + total (same constants as Painless)
     prim_years = _get_float(doc_source, "primary_role_weighted_years")
     sec_years = _get_float(doc_source, "secondary_role_weighted_years")
+    total_years = _get_float(doc_source, "total_weighted_relevant_years")
+    if total_years <= 0 and (prim_years or sec_years):
+        total_years = prim_years + sec_years
     prim_title_str = _get_str(doc_source, "primary_role_title")
     prim_title_embedding = doc_source.get("primary_role_title_embedding")
 
@@ -100,7 +103,7 @@ def compute_breakdown(
 
     prim_rel = max(0.2, prim_title_sim - 1.0)
     prim_rel_sq = prim_rel * prim_rel
-    years_cap = min(1.0, prim_years / 5.0) if prim_years else 0.0
+    years_cap = min(1.0, prim_years / 3.0) if prim_years else 0.0
     none_penalty = 0.10 if prim_title_str == "NONE" else 1.0
 
     sigmoid_prim = (2.0 / (1.0 + math.exp(-0.25 * prim_years))) if prim_years else 0.0
@@ -111,7 +114,11 @@ def compute_breakdown(
     sigmoid_sec = (2.0 / (1.0 + math.exp(-0.20 * sec_years))) if sec_years else 0.0
     exp_secondary = sigmoid_sec * agg_rel_sq * 0.30
 
-    exp_score = exp_primary + exp_secondary
+    exp_total = 0.0
+    if total_years > 0 and agg_rel > 0:
+        sigmoid_total = 2.0 / (1.0 + math.exp(-0.15 * total_years))
+        exp_total = sigmoid_total * agg_rel * 0.25
+    exp_score = exp_primary + exp_secondary + exp_total
 
     # Seniority: max(0.5, 1 - 0.15*|cand - job|), then *2 in formula
     cand_lvl = _get_int(doc_source, "seniority_level_int", job_seniority_int)
@@ -137,9 +144,11 @@ def compute_breakdown(
         experience_detail = {
             "primary_years": round(prim_years, 2),
             "secondary_years": round(sec_years, 2),
+            "total_years": round(total_years, 2),
             "primary_relevance": round(prim_rel, 3),
             "exp_primary": round(exp_primary, 4),
             "exp_secondary": round(exp_secondary, 4),
+            "exp_total": round(exp_total, 4),
             "none_penalty": none_penalty,
         }
 

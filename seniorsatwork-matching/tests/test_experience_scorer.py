@@ -35,10 +35,12 @@ def test_recency_weight_15_years_ago():
 
 
 def test_recency_weight_20_years_ago():
+    # 15+ years ago: decay with floor RECENCY_FLOOR (0.38)
     w = recency_weight(CURRENT_YEAR - 20)
-    assert 0.1 < w < 0.3
+    assert w >= 0.38
 
 
 def test_recency_weight_25_years_ago():
+    # Floor applies so long-ago experience is not driven to zero
     w = recency_weight(CURRENT_YEAR - 25)
-    assert w < 0.2
+    assert w >= 0.38
