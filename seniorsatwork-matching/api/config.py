@@ -60,6 +60,23 @@ def get_max_results() -> int:
     return int(load_config().get("max_results", DEFAULT_MAX_RESULTS))
 
 
+def get_max_raw_score(weights: dict[str, float] | None = None) -> float:
+    """
+    Theoretical maximum raw score when every dimension is at its maximum.
+    Used so display score = (raw_score / max_raw_score) × 100 (probability, never exceeds 100).
+    Dimension maxes: title/industry/skills/edu/seniority/language = 2.0 each; experience = 2.6.
+    """
+    w = weights if weights is not None else get_weights()
+    w_t = w.get("title", DEFAULT_WEIGHTS["title"])
+    w_i = w.get("industry", DEFAULT_WEIGHTS["industry"])
+    w_e = w.get("experience", DEFAULT_WEIGHTS["experience"])
+    w_s = w.get("skills", DEFAULT_WEIGHTS["skills"])
+    w_sen = w.get("seniority", DEFAULT_WEIGHTS["seniority"])
+    w_edu = w.get("education", DEFAULT_WEIGHTS["education"])
+    w_lang = w.get("language", DEFAULT_WEIGHTS["language"])
+    return 2.0 * (w_t + w_i + w_s + w_sen + w_edu + w_lang) + 2.6 * w_e
+
+
 def update_config(updates: dict) -> dict:
     cfg = load_config()
     if "scoring_weights" in updates:
