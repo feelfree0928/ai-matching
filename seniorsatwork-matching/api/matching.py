@@ -230,8 +230,10 @@ def run_match(
     for i, h in enumerate(hits):
         src = h.get("_source") or {}
         score_raw = float(h.get("_score", 0))
-        # Normalize to 0-100 for display (script score is roughly 0..2)
-        total_norm = min(100.0, max(0.0, (score_raw / 2.0) * 100.0))
+        # Normalize to 0-100 for display. Raw script scores typically sit in ~1.0-1.45 for good
+        # matches; use 1.4 as reference for 100 so best candidates show 85-100 with spread.
+        SCORE_RAW_REFERENCE = 1.4
+        total_norm = min(100.0, max(0.0, (score_raw / SCORE_RAW_REFERENCE) * 100.0))
         # Approximate breakdown by weight (we don't have per-dim from ES)
         w = weights
         breakdown = ScoreBreakdown(
