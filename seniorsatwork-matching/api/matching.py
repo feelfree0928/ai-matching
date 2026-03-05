@@ -9,7 +9,7 @@ from elasticsearch import Elasticsearch
 from elasticsearch.exceptions import BadRequestError
 from es_layer.indexer import get_es_client
 from es_layer.mappings import CANDIDATES_INDEX, SENIORITY_TO_INT
-from es_layer.queries import build_hard_filters, build_script_score, build_script_score_breakdown_field
+from es_layer.queries import build_hard_filters, build_script_score
 
 from api.config import DEFAULT_WEIGHTS, get_max_results, get_min_score_raw, get_weights
 from api.models import (
@@ -110,10 +110,7 @@ def _build_rank_explanation(
             bullets.append("Skills: " + ", ".join(found))
 
     # Education
-    if breakdown.score_calculation:
-        if breakdown.education_score > 0.5:
-            bullets.append("Relevant certifications/education")
-    elif breakdown.education_score and breakdown.total and breakdown.education_score > (breakdown.total * 0.05):
+    if breakdown.education_score and breakdown.total and breakdown.education_score > (breakdown.total * 0.05):
         bullets.append("Relevant certifications/education")
 
     return bullets[:8]
@@ -158,14 +155,6 @@ def run_match(
         weights=weights,
     )
 
-    breakdown_field = build_script_score_breakdown_field(
-        title_vec=title_vec,
-        industry_vec=industry_vec,
-        skills_vec=skills_vec,
-        edu_vec=edu_vec,
-        expected_seniority_int=job_seniority_int,
-    )
-
     effective_min_score = req.min_score if req.min_score is not None else min_score
 
     source_excludes = [
@@ -191,9 +180,6 @@ def run_match(
             min_score=min_s,
             size=max_results,
             source_excludes=source_excludes,
-            script_fields={
-                "score_breakdown": breakdown_field,
-            },
         )
 
     try:
@@ -260,52 +246,28 @@ def run_match(
         total_norm = min(100.0, max(0.0, (score_raw / SCORE_RAW_REFERENCE) * 100.0))
         w = weights
 
-        # Per-dimension scores from script_fields (actual values from ES)
-        fields = h.get("fields") or {}
-        breakdown_values = None
-        raw_list = fields.get("score_breakdown")
-        if raw_list and len(raw_list) > 0:
-            first = raw_list[0]
-            if isinstance(first, dict):
-                breakdown_values = first
-
-        if breakdown_values and isinstance(breakdown_values, dict):
-            score_calculation = []
-            title_score = round(float(breakdown_values.get("title", 0)), 3)
-            industry_score = round(float(breakdown_values.get("industry", 0)), 3)
-            experience_score = round(float(breakdown_values.get("experience", 0)), 3)
-            skills_score = round(float(breakdown_values.get("skills", 0)), 3)
-            seniority_score = round(float(breakdown_values.get("seniority", 0)), 3)
-            education_score = round(float(breakdown_values.get("education", 0)), 3)
-            language_score = round(float(breakdown_values.get("language", 0)), 3)
-            for key, label in PARAM_ORDER:
-                val = breakdown_values.get(key, 0)
-                if val is not None:
-                    weight = w.get(key, DEFAULT_WEIGHTS.get(key, 0))
-                    value_rounded = round(float(val), 3)
-                    contrib_raw = value_rounded * weight
-                    contribution = round((contrib_raw / score_raw * total_norm), 1) if score_raw else 0.0
-                    score_calculation.append({
-                        "parameter": label,
-                        "value": value_rounded,
-                        "weight": weight,
-                        "contribution": contribution,
-                    })
-            total_formula = "raw_score = Σ(value × weight); total = (raw_score / 1.4) × 100"
-            parts = [f"{c['parameter']}: {c['value']} × {c['weight']} = {c['contribution']}" for c in score_calculation]
-            score_display = f"Score {round(total_norm, 1)} ({', '.join(parts)})"
-        else:
-            # Fallback: approximate breakdown by weight (no script_field data)
-            score_calculation = []
-            title_score = round(total_norm * w.get("title", DEFAULT_WEIGHTS["title"]), 1)
-            industry_score = round(total_norm * w.get("industry", DEFAULT_WEIGHTS["industry"]), 1)
-            experience_score = round(total_norm * w.get("experience", DEFAULT_WEIGHTS["experience"]), 1)
-            skills_score = round(total_norm * w.get("skills", DEFAULT_WEIGHTS["skills"]), 1)
-            seniority_score = round(total_norm * w.get("seniority", DEFAULT_WEIGHTS["seniority"]), 1)
-            education_score = round(total_norm * w.get("education", DEFAULT_WEIGHTS["education"]), 1)
-            language_score = round(total_norm * w.get("language", DEFAULT_WEIGHTS["language"]), 1)
-            total_formula = "total = (raw_score / 1.4) × 100 (breakdown approximate)"
-            score_display = f"Score {round(total_norm, 1)} (Title: {title_score}, Industry: {industry_score}, Experience: {experience_score}, Skills: {skills_score}, Seniority: {seniority_score}, Education: {education_score}, Language: {language_score})"
+        # Per-dimension breakdown: Elasticsearch script_fields cannot use cosineSimilarity,
+        # so we always use the proportional breakdown (total × weight per dimension).
+        score_calculation = []
+        title_score = round(total_norm * w.get("title", DEFAULT_WEIGHTS["title"]), 1)
+        industry_score = round(total_norm * w.get("industry", DEFAULT_WEIGHTS["industry"]), 1)
+        experience_score = round(total_norm * w.get("experience", DEFAULT_WEIGHTS["experience"]), 1)
+        skills_score = round(total_norm * w.get("skills", DEFAULT_WEIGHTS["skills"]), 1)
+        seniority_score = round(total_norm * w.get("seniority", DEFAULT_WEIGHTS["seniority"]), 1)
+        education_score = round(total_norm * w.get("education", DEFAULT_WEIGHTS["education"]), 1)
+        language_score = round(total_norm * w.get("language", DEFAULT_WEIGHTS["language"]), 1)
+        for key, label in PARAM_ORDER:
+            weight = w.get(key, DEFAULT_WEIGHTS.get(key, 0))
+            contribution = round(total_norm * weight, 1)
+            score_calculation.append({
+                "parameter": label,
+                "value": round(total_norm, 3),
+                "weight": weight,
+                "contribution": contribution,
+            })
+        total_formula = "raw_score = Σ(value × weight); total = (raw_score / 1.4) × 100 (breakdown approximate)"
+        parts = [f"{c['parameter']}: {c['value']} × {c['weight']} = {c['contribution']}" for c in score_calculation]
+        score_display = f"Score {round(total_norm, 1)} ({', '.join(parts)})"
 
         breakdown = ScoreBreakdown(
             total=round(total_norm, 1),
