@@ -125,12 +125,14 @@ def build_script_score(
                     ? doc['primary_role_weighted_years'].value : 0.0;
                 double secYears = doc['secondary_role_weighted_years'].size() > 0
                     ? doc['secondary_role_weighted_years'].value : 0.0;
+                double totalYears = doc['total_weighted_relevant_years'].size() > 0
+                    ? doc['total_weighted_relevant_years'].value : (primYears + secYears);
 
                 double primTitleSim = doc['primary_role_title_embedding'].size() == 0 ? titleSim
                     : cosineSimilarity(params.titleVec, 'primary_role_title_embedding') + 1.0;
                 double primRel    = Math.max(0.2, primTitleSim - 1.0);
                 double primRelSq  = primRel * primRel;
-                double yearsCap   = Math.min(1.0, primYears / 5.0);
+                double yearsCap   = Math.min(1.0, primYears / 3.0);
                 def primTitle = doc['primary_role_title'].size() > 0 ? doc['primary_role_title'].value : '';
                 double nonePenalty = (primTitle.toString() == 'NONE') ? 0.10 : 1.0;
                 double expPrimary = (2.0 / (1.0 + Math.exp(-0.25 * primYears))) * primRelSq * yearsCap * nonePenalty;
@@ -139,7 +141,9 @@ def build_script_score(
                 double aggRelSq  = aggRel * aggRel;
                 double expSecondary = (2.0 / (1.0 + Math.exp(-0.20 * secYears))) * aggRelSq * 0.30;
 
-                double expScore = expPrimary + expSecondary;
+                double expTotal = (totalYears > 0 && aggRel > 0)
+                    ? (2.0 / (1.0 + Math.exp(-0.15 * totalYears))) * aggRel * 0.25 : 0.0;
+                double expScore = expPrimary + expSecondary + expTotal;
 
                 def candLvl = doc['seniority_level_int'].size() > 0 ? doc['seniority_level_int'].value : params.jobLvl;
                 def jobLvl = params.jobLvl;

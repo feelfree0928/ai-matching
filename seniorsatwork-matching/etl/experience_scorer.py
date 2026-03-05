@@ -8,12 +8,15 @@ from typing import Any
 CURRENT_YEAR = 2026
 
 
+RECENCY_FLOOR = 0.38
+
+
 def recency_weight(end_year: int) -> float:
     """
     Weight by how recent the experience is. Current/ongoing = 1.0; decays over time.
     - 0–5 years ago: linear decay to 0.80
     - 5–15 years ago: ~7%/yr decay to ~0.40
-    - 15+ years ago: steep decay toward zero
+    - 15+ years ago: decay with a floor (RECENCY_FLOOR) so long careers are not over-penalized.
     """
     years_ago = CURRENT_YEAR - end_year
     if years_ago <= 0:
@@ -22,7 +25,7 @@ def recency_weight(end_year: int) -> float:
         return 1.0 - (years_ago * 0.04)
     if years_ago <= 15:
         return 0.80 * (0.93 ** (years_ago - 5))
-    return 0.40 * (0.85 ** (years_ago - 15))
+    return max(RECENCY_FLOOR, 0.40 * (0.85 ** (years_ago - 15)))
 
 
 def apply_experience_scoring(candidate: dict[str, Any]) -> dict[str, Any]:
