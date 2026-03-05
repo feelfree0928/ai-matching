@@ -11,7 +11,7 @@ from es_layer.indexer import get_es_client
 from es_layer.mappings import CANDIDATES_INDEX, SENIORITY_TO_INT
 from es_layer.queries import build_hard_filters, build_script_score
 
-from api.config import DEFAULT_WEIGHTS, get_max_results, get_min_score_raw, get_weights
+from api.config import DEFAULT_WEIGHTS, get_max_results, get_max_raw_score, get_min_score_raw, get_weights
 from api.models import (
     CandidateLanguage,
     CandidateMatch,
@@ -232,11 +232,10 @@ def run_match(
     for i, h in enumerate(hits):
         src = h.get("_source") or {}
         score_raw = float(h.get("_score", 0))
-        # Normalize to 0-100 for display. Raw script scores typically sit in ~1.0-1.45 for good
-        # matches; use 1.4 as reference for 100 so best candidates show 85-100 with spread.
-        SCORE_RAW_REFERENCE = 1.4
-        total_norm = min(100.0, max(0.0, (score_raw / SCORE_RAW_REFERENCE) * 100.0))
         w = weights
+        max_raw = get_max_raw_score(w)
+        # Probability-based score: (raw / max_raw) × 100 so it never exceeds 100.
+        total_norm = min(100.0, max(0.0, (score_raw / max_raw) * 100.0)) if max_raw > 0 else 0.0
 
         experience_detail = None
         if has_breakdown_data(src):
@@ -254,7 +253,8 @@ def run_match(
                 value = breakdown_vals.get(key, 0.0)
                 weight = w.get(key, DEFAULT_WEIGHTS.get(key, 0))
                 contrib_raw = value * weight
-                contribution = round((contrib_raw / score_raw * total_norm), 1) if score_raw else 0.0
+                # Contribution as share of 100: (value×weight / max_raw) × 100 so contributions sum to total_norm
+                contribution = round((contrib_raw / max_raw * 100.0), 1) if max_raw else 0.0
                 score_calculation.append({
                     "parameter": label,
                     "value": round(value, 3),
@@ -268,7 +268,7 @@ def run_match(
             seniority_score = round(breakdown_vals.get("seniority", 0), 3)
             education_score = round(breakdown_vals.get("education", 0), 3)
             language_score = round(breakdown_vals.get("language", 0), 3)
-            total_formula = "raw_score = Σ(value × weight); total = (raw_score / 1.4) × 100"
+            total_formula = f"total = (raw_score / max_raw) × 100 (probability); max_raw = {round(max_raw, 2)}"
             parts = [f"{c['parameter']}: {c['value']} × {c['weight']} = {c['contribution']}" for c in score_calculation]
             score_display = f"Score {round(total_norm, 1)} ({', '.join(parts)})"
         else:
@@ -282,14 +282,14 @@ def run_match(
             language_score = round(total_norm * w.get("language", DEFAULT_WEIGHTS["language"]), 1)
             for key, label in PARAM_ORDER:
                 weight = w.get(key, DEFAULT_WEIGHTS.get(key, 0))
-                contribution = round(total_norm * weight, 1)
+                contribution = round((total_norm * weight), 1)
                 score_calculation.append({
                     "parameter": label,
                     "value": round(total_norm, 3),
                     "weight": weight,
                     "contribution": contribution,
                 })
-            total_formula = "raw_score = Σ(value × weight); total = (raw_score / 1.4) × 100 (breakdown approximate)"
+            total_formula = f"total = (raw_score / max_raw) × 100 (probability, breakdown approximate); max_raw = {round(max_raw, 2)}"
             parts = [f"{c['parameter']}: {c['value']} × {c['weight']} = {c['contribution']}" for c in score_calculation]
             score_display = f"Score {round(total_norm, 1)} ({', '.join(parts)})"
 
