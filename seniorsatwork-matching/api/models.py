@@ -34,6 +34,7 @@ class JobMatchRequest(BaseModel):
 
 class ScoreBreakdown(BaseModel):
     total: float = Field(..., description="0-100 normalized")
+    raw_score: float = Field(default=0.0, description="Elasticsearch script score (typical ~1.0-1.45)")
     title_score: float = 0.0
     industry_score: float = 0.0
     experience_score: float = 0.0
@@ -41,6 +42,21 @@ class ScoreBreakdown(BaseModel):
     seniority_score: float = 0.0
     education_score: float = 0.0
     language_score: float = 0.0
+    # How total is computed: raw_score = Σ(value×weight); total = (raw_score/1.4)×100
+    total_formula: str = Field(
+        default="",
+        description="Short explanation: raw_score = Σ(value × weight); total = (raw_score / 1.4) × 100",
+    )
+    # Per-dimension: parameter, value, weight, and contribution = (value×weight)/raw_score×total
+    score_calculation: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description='e.g. {"parameter": "Title", "value": 0.8, "weight": 0.15, "contribution": 13.3}',
+    )
+    # Ready-to-display string: "Score 78.6 (Title: 1.24 × 0.15 = 13.3, Experience: ...)"
+    score_display: str = Field(
+        default="",
+        description="Formatted for UI: Score X (Title: v × w = c, ...)",
+    )
 
 
 class WorkExperienceItem(BaseModel):
