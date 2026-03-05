@@ -74,7 +74,11 @@ def _build_rank_explanation(
             break
     if not any("Job title match" in b for b in bullets) and work_experiences:
         best = max(work_experiences, key=lambda x: float(x.get("weighted_years", 0) or 0))
-        best_title = best.get("standardized_title") or best.get("raw_title") or ""
+        std_title = (best.get("standardized_title") or "").strip()
+        raw_title = (best.get("raw_title") or "").strip()
+        best_title = raw_title
+        if std_title and std_title.upper() != "NONE":
+            best_title = std_title
         if best_title:
             bullets.append(f"Most relevant role: {best_title}")
 
@@ -247,7 +251,9 @@ def run_match(
         most_relevant = ""
         if work_experiences_raw:
             best = max(work_experiences_raw, key=lambda x: float(x.get("weighted_years", 0) or 0))
-            most_relevant = best.get("standardized_title") or best.get("raw_title") or ""
+            std_title = (best.get("standardized_title") or "").strip()
+            raw_title = (best.get("raw_title") or "").strip()
+            most_relevant = std_title if std_title and std_title.upper() != "NONE" else raw_title
         industries = list(dict.fromkeys(exp.get("industry") for exp in work_experiences_raw if exp.get("industry")))[:5]
         addr = src.get("address") or ""
 
