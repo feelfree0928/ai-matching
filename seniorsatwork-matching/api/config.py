@@ -12,10 +12,11 @@ DEFAULT_WEIGHTS = {
     "title":      0.15,   # role alignment; typical industry balance
     "industry":   0.12,   # sector fit
     "experience": 0.25,   # years + relevance
-    "skills":     0.35,   # primary signal (highest weight)
+    "skills":     0.25,   # primary signal (reduced to make room for category)
     "seniority":  0.06,   # level match
     "education":  0.05,   # degree/certifications
     "language":   0.02,   # minimal
+    "category":   0.10,   # job function match (profession taxonomy)
 }
 
 # Raw score threshold (on script_score scale ~0..2). 1.45 ≈ 72.5/100 normalized.
@@ -64,7 +65,7 @@ def get_max_raw_score(weights: dict[str, float] | None = None) -> float:
     """
     Theoretical maximum raw score when every dimension is at its maximum.
     Used so display score = (raw_score / max_raw_score) × 100 (probability, never exceeds 100).
-    Dimension maxes: title/industry/skills/edu/seniority/language = 2.0 each.
+    Dimension maxes: title/industry/skills/edu/seniority/language/category = 2.0 each.
     Experience max = exp_primary(2) + exp_secondary(0.6) + exp_total(0.5) = 3.1.
     """
     w = weights if weights is not None else get_weights()
@@ -75,7 +76,8 @@ def get_max_raw_score(weights: dict[str, float] | None = None) -> float:
     w_sen = w.get("seniority", DEFAULT_WEIGHTS["seniority"])
     w_edu = w.get("education", DEFAULT_WEIGHTS["education"])
     w_lang = w.get("language", DEFAULT_WEIGHTS["language"])
-    return 2.0 * (w_t + w_i + w_s + w_sen + w_edu + w_lang) + 3.1 * w_e
+    w_cat = w.get("category", DEFAULT_WEIGHTS.get("category", 0))
+    return 2.0 * (w_t + w_i + w_s + w_sen + w_edu + w_lang + w_cat) + 3.1 * w_e
 
 
 def update_config(updates: dict) -> dict:

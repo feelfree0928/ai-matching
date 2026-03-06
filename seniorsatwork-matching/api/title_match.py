@@ -62,7 +62,7 @@ def score_title_fit_batch(
     if not job_title or not matches:
         return {}
     c = client or OpenAI()
-    # Build compact candidate list: post_id and best role title(s)
+    # Build compact candidate list: post_id, best role title(s), and job function categories
     lines = []
     for m in matches:
         role = (m.most_relevant_role or "").strip()
@@ -73,12 +73,14 @@ def score_title_fit_batch(
                 if r and r.upper() != "NONE":
                     roles.append(r)
             role = ", ".join(roles) if roles else "—"
-        lines.append(f"  {m.post_id}: {role}")
+        cats = ", ".join((m.job_category_labels or [])[:3])
+        suffix = f" [Job function: {cats}]" if cats else ""
+        lines.append(f"  {m.post_id}: {role}{suffix}")
     block = "\n".join(lines)
 
     prompt = f"""Job title: {job_title.strip()}
 
-Candidates (post_id: main role title):
+Candidates (post_id: main role title [Job function: category labels when available]):
 {block}
 
 Score each candidate 0-10 on how well their role title matches the job title. 10 = same or equivalent role (e.g. Night Receptionist for "Nacht Rezeptionist"), 0 = completely unrelated (e.g. Job Assistant for a night receptionist job). Use decimals if needed.

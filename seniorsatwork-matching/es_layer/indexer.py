@@ -150,6 +150,7 @@ def _candidate_doc(c: dict[str, Any]) -> dict[str, Any]:
         "retired": c.get("retired", False),
         "job_categories_primary": c.get("job_categories_primary") or [],
         "job_categories_secondary": c.get("job_categories_secondary") or [],
+        "job_category_labels": c.get("job_category_labels") or [],
         # ── Identity & contact ───────────────────────────
         "candidate_name": (c.get("candidate_name") or "").strip() or None,
         "phone": (c.get("phone") or "").strip() or None,
@@ -283,4 +284,5 @@ def _job_doc(j: dict[str, Any]) -> dict[str, Any]:
         "pensum_min": j.get("pensum_min", 0),
         "pensum_max": j.get("pensum_max", 100),
         "required_languages": j.get("required_languages") or [],
+        "job_category_labels": j.get("job_category_labels") or [],
     }

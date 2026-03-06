@@ -45,11 +45,13 @@ def _candidate_summary(m: "CandidateMatch") -> str:
     exp_block = "\n".join(exp_lines) if exp_lines else "  (none)"
     skills = (m.skills_text or "")[:200].replace("\n", " ")
     industries = ", ".join((m.top_industries or m.most_experience_industries or [])[:3])
+    cats = ", ".join((m.job_category_labels or [])[:3])
     profile = (m.short_description or m.ai_profile_description or "")[:150].replace("\n", " ")
     return (
         f"[post_id={m.post_id}]\n"
         f"Best role: {m.most_relevant_role or '—'} | {m.total_relevant_years:.0f} yrs relevant | Seniority: {m.seniority_level or '—'}\n"
         f"Industries: {industries or '—'}\n"
+        f"Job function: {cats or '—'}\n"
         f"Career: {exp_block}\n"
         f"Skills: {skills or '—'}\n"
         f"Profile: {profile or '—'}"

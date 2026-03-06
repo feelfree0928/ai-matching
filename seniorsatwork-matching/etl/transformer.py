@@ -306,12 +306,14 @@ def infer_seniority(work_experiences: list[dict[str, Any]]) -> str:
     return _match_seniority(title)
 
 
-def transform_candidate(raw: dict[str, Any]) -> dict[str, Any]:
+def transform_candidate(raw: dict[str, Any], *, term_labels: dict[str, str] | None = None) -> dict[str, Any]:
     """
     Transform one raw candidate (from extractor) into a normalized candidate document.
     Does NOT add recency_weight/weighted_years (done in experience_scorer) or standardized_title (done in title_standardizer).
+    term_labels: optional dict from term_id (str) to label; used for job_category_labels.
     """
     meta = raw.get("meta") or {}
+    labels = term_labels or {}
     work_experiences = parse_work_experiences(meta.get("_noo_resume_field__taetigkeiten"))
     languages = parse_languages(meta.get("_noo_resume_field_languages_i_speak"))
 
@@ -415,6 +417,7 @@ def transform_candidate(raw: dict[str, Any]) -> dict[str, Any]:
         # categories
         "job_categories_primary": _parse_category_ids(meta.get("_noo_resume_field_job_category_primary")),
         "job_categories_secondary": _parse_category_ids(meta.get("_noo_resume_field_job_category_secondary")),
+        "job_category_labels": _build_job_category_labels(meta, labels),
         # meta
         "profile_status": profile_status,
         "registered_at": registered_at,
@@ -434,13 +437,16 @@ def _safe_float(val: Any) -> float | None:
         return None
 
 
-def transform_job(raw: dict[str, Any]) -> dict[str, Any]:
+def transform_job(raw: dict[str, Any], *, term_labels: dict[str, str] | None = None) -> dict[str, Any]:
     """
     Transform one raw job posting (from extractor) into a normalized job document.
     Tries multiple Noo Job Board meta key patterns; falls back to safe defaults so
     the document is always indexable.
+    job_category_labels: use raw["job_category_labels"] if pre-enriched by caller;
+    else parse _noo_job_field_job_categories from meta when term_labels provided.
     """
     meta = raw.get("meta") or {}
+    labels = term_labels or {}
     title = (raw.get("post_title") or "").strip()
 
     # Job description / skills: prefer explicit skills meta, fall back to full post_content
@@ -500,6 +506,12 @@ def transform_job(raw: dict[str, Any]) -> dict[str, Any]:
         parsed_langs = parse_languages(lang_raw)
         required_languages = [{"name": l["lang"], "min_level": l.get("degree", "B2")} for l in parsed_langs]
 
+    # Job categories: prefer pre-enriched raw["job_category_labels"]; else parse from postmeta
+    job_category_labels: list[str] = raw.get("job_category_labels") or []
+    if not job_category_labels and labels:
+        ids = _parse_category_ids(meta.get("_noo_job_field_job_categories"))
+        job_category_labels = [labels.get(cid, cid) for cid in ids if cid]
+
     return {
         "post_id": raw["post_id"],
         "post_modified": raw.get("post_modified"),
@@ -513,12 +525,26 @@ def transform_job(raw: dict[str, Any]) -> dict[str, Any]:
         "pensum_min": pensum_min,
         "pensum_max": pensum_max,
         "required_languages": required_languages,
+        "job_category_labels": job_category_labels,
     }
 
 
 def _infer_seniority_from_title(title: str) -> str:
     """Infer seniority level from a job posting title."""
     return _match_seniority(title.lower()) if title else "senior"
+
+
+def _safe_str(v: Any) -> str:
+    """Decode bytes to string; phpserialize returns bytes for PHP strings."""
+    return v.decode("utf-8") if isinstance(v, bytes) else str(v)
+
+
+def _build_job_category_labels(meta: dict[str, Any], term_labels: dict[str, str]) -> list[str]:
+    """Build job_category_labels from primary + secondary category IDs using term label lookup."""
+    ids_primary = _parse_category_ids(meta.get("_noo_resume_field_job_category_primary"))
+    ids_secondary = _parse_category_ids(meta.get("_noo_resume_field_job_category_secondary"))
+    all_ids = list(dict.fromkeys(ids_primary + ids_secondary))
+    return [term_labels.get(cid, cid) for cid in all_ids if cid]
 
 
 def _parse_category_ids(meta_value: Any) -> list[str]:
@@ -541,4 +567,4 @@ def _parse_category_ids(meta_value: Any) -> list[str]:
                 int_keys.append(int(k))
             except (ValueError, TypeError):
                 continue
-    return [str(raw[k]) for k in sorted(int_keys)]
+    return [_safe_str(raw[k]) for k in sorted(int_keys)]

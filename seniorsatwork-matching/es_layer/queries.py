@@ -89,8 +89,9 @@ def build_script_score(
     edu_vec: list[float],
     expected_seniority_int: int,
     weights: dict[str, float],
+    job_category_labels: list[str] | None = None,
 ) -> dict:
-    """Build script_score for 7-dimension scoring (title, industry, experience, skills, seniority, education, language).
+    """Build script_score for 8-dimension scoring (title, industry, experience, skills, seniority, education, language, category).
 
     Experience uses a two-part model (Fix D):
       - Primary role (highest weighted_years single role): scored against its OWN title embedding.
@@ -105,15 +106,19 @@ def build_script_score(
     w_t = weights.get("title", 0.15)
     w_i = weights.get("industry", 0.12)
     w_e = weights.get("experience", 0.25)
-    w_s = weights.get("skills", 0.35)
+    w_s = weights.get("skills", 0.25)
     w_sen = weights.get("seniority", 0.06)
     w_edu = weights.get("education", 0.05)
     w_lang = weights.get("language", 0.02)
+    w_cat = weights.get("category", 0.10)
+    job_cats = job_category_labels or []
     return {
         "script": {
             "source": """
-                double titleSim = doc['aggregated_title_embedding'].size() == 0 ? 1.0
-                    : cosineSimilarity(params.titleVec, 'aggregated_title_embedding') + 1.0;
+                double titleSim = doc['primary_role_title_embedding'].size() > 0
+                    ? cosineSimilarity(params.titleVec, 'primary_role_title_embedding') + 1.0
+                    : doc['aggregated_title_embedding'].size() == 0 ? 1.0
+                      : cosineSimilarity(params.titleVec, 'aggregated_title_embedding') + 1.0;
                 double industrySim = doc['aggregated_industry_embedding'].size() == 0 ? 1.0
                     : cosineSimilarity(params.industryVec, 'aggregated_industry_embedding') + 1.0;
                 double skillsSim = doc['skills_embedding'].size() == 0 ? 1.0
@@ -151,9 +156,25 @@ def build_script_score(
                 double langLvl = doc['language_level_max'].size() > 0 ? doc['language_level_max'].value : 0.0;
                 double langScore = 1.0 + langLvl / 7.0;
 
+                double catScore = 1.0;
+                if (params.jobCategoryLabels != null && params.jobCategoryLabels.length > 0) {
+                    boolean hasMatch = false;
+                    for (int j = 0; j < params.jobCategoryLabels.length; j++) {
+                        String jc = params.jobCategoryLabels[j];
+                        for (int i = 0; i < doc['job_category_labels'].size(); i++) {
+                            if (doc['job_category_labels'][i].toString().equals(jc)) {
+                                hasMatch = true;
+                                break;
+                            }
+                        }
+                        if (hasMatch) break;
+                    }
+                    catScore = hasMatch ? 2.0 : 0.5;
+                }
+
                 return (params.wT * titleSim) + (params.wI * industrySim) + (params.wE * expScore)
                      + (params.wS * skillsSim) + (params.wSen * seniorityFit * 2.0)
-                     + (params.wEdu * eduSim) + (params.wLang * langScore);
+                     + (params.wEdu * eduSim) + (params.wLang * langScore) + (params.wCat * catScore);
             """,
             "params": {
                 "titleVec": title_vec,
@@ -168,6 +189,8 @@ def build_script_score(
                 "wSen": w_sen,
                 "wEdu": w_edu,
                 "wLang": w_lang,
+                "wCat": w_cat,
+                "jobCategoryLabels": job_cats,
             },
         }
     }

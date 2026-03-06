@@ -19,7 +19,12 @@ load_dotenv()
 
 from es_layer.indexer import bulk_index_candidates, bulk_index_jobs, ensure_indices, get_es_client
 from etl.experience_scorer import apply_experience_scoring
-from etl.extractor import extract_candidates, extract_job_postings
+from etl.extractor import (
+    extract_candidates,
+    extract_job_postings,
+    fetch_job_categories_standalone,
+    fetch_term_labels_standalone,
+)
 from etl.title_standardizer import apply_standardized_titles, load_standardized_titles
 from etl.transformer import transform_candidate, transform_job
 from embeddings.generator import add_embeddings_to_candidate
@@ -71,6 +76,10 @@ def main() -> None:
     else:
         print("FULL LOAD MODE: Processing all candidates")
 
+    print("Fetching job category labels from WordPress...")
+    term_labels = fetch_term_labels_standalone()
+    print(f"  Loaded {len(term_labels)} category labels.")
+
     print("Extracting candidates from WordPress/MariaDB...")
     raw_candidates = extract_candidates(limit=limit)
     total_raw = len(raw_candidates)
@@ -111,7 +120,7 @@ def main() -> None:
 
             for raw in batch_raw:
                 try:
-                    c = transform_candidate(raw)
+                    c = transform_candidate(raw, term_labels=term_labels)
                     apply_experience_scoring(c)
                     apply_standardized_titles(c, standardized_titles, client=client)
                     add_embeddings_to_candidate(c, client)
@@ -167,10 +176,15 @@ def index_jobs(es) -> None:
     if not raw_jobs:
         print("No job postings to index.")
         return
+    post_ids = [r["post_id"] for r in raw_jobs]
+    job_categories = fetch_job_categories_standalone(post_ids)
+    for rj in raw_jobs:
+        rj["job_category_labels"] = job_categories.get(rj["post_id"], [])
+    term_labels = fetch_term_labels_standalone()
     transformed_jobs = []
     for rj in raw_jobs:
         try:
-            j = transform_job(rj)
+            j = transform_job(rj, term_labels=term_labels)
             transformed_jobs.append(j)
         except Exception as e:
             print(f"Skip job post_id={rj.get('post_id')}: {e}")
