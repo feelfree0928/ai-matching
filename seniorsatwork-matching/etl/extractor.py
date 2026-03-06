@@ -85,6 +85,78 @@ def _meta_keys_placeholder(keys: list[str]) -> str:
     return ", ".join("%s" for _ in keys)
 
 
+def fetch_term_labels(conn: pymysql.Connection, taxonomy: str = "job_category") -> dict[str, str]:
+    """
+    Fetch WordPress taxonomy term labels (term_id -> name).
+    Used to map category IDs to human-readable labels for job_category_labels.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT t.term_id, t.name
+            FROM wp_terms t
+            JOIN wp_term_taxonomy tt ON t.term_id = tt.term_id
+            WHERE tt.taxonomy = %s
+            """,
+            (taxonomy,),
+        )
+        rows = cur.fetchall()
+    return {str(r["term_id"]): (r["name"] or "").strip() for r in rows}
+
+
+def fetch_term_labels_standalone(taxonomy: str = "job_category") -> dict[str, str]:
+    """
+    Fetch term labels for pipeline use. Opens and closes its own connection.
+    Call once at pipeline startup.
+    """
+    conn = _get_connection()
+    try:
+        return fetch_term_labels(conn, taxonomy)
+    finally:
+        conn.close()
+
+
+def fetch_job_categories_by_post_ids(conn: pymysql.Connection, post_ids: list[int], taxonomy: str = "job_category") -> dict[int, list[str]]:
+    """
+    Fetch job category labels per post_id via wp_term_relationships.
+    Returns {post_id: [label1, label2, ...]}.
+    """
+    if not post_ids:
+        return {}
+    placeholders = ", ".join("%s" for _ in post_ids)
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT tr.object_id AS post_id, t.name
+            FROM wp_term_relationships tr
+            JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id
+            JOIN wp_terms t ON tt.term_id = t.term_id
+            WHERE tr.object_id IN ({placeholders})
+            AND tt.taxonomy = %s
+            """,
+            post_ids + [taxonomy],
+        )
+        rows = cur.fetchall()
+    result: dict[int, list[str]] = {}
+    for row in rows:
+        pid = row["post_id"]
+        name = (row["name"] or "").strip()
+        if pid not in result:
+            result[pid] = []
+        if name:
+            result[pid].append(name)
+    return result
+
+
+def fetch_job_categories_standalone(post_ids: list[int], taxonomy: str = "job_category") -> dict[int, list[str]]:
+    """Fetch job categories for given post IDs. Opens and closes its own connection."""
+    conn = _get_connection()
+    try:
+        return fetch_job_categories_by_post_ids(conn, post_ids, taxonomy)
+    finally:
+        conn.close()
+
+
 def extract_candidates(
     post_type: str = POST_TYPE_RESUME,
     post_status: str = "publish",

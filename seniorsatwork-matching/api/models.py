@@ -28,6 +28,7 @@ class JobMatchRequest(BaseModel):
     pensum_max: int = 100
     required_languages: list[LanguageRequirement] = Field(default_factory=list)
     required_available_before: Optional[str] = Field(default=None, description="ISO date (yyyy-MM-dd); only candidates available on or before this date pass")
+    job_category_labels: list[str] = Field(default_factory=list, description="Job function category labels for scoring (e.g. Buchhalter)")
     max_results: Optional[int] = None
     min_score: Optional[float] = None
 
@@ -42,6 +43,7 @@ class ScoreBreakdown(BaseModel):
     seniority_score: float = 0.0
     education_score: float = 0.0
     language_score: float = 0.0
+    category_score: float = 0.0
     # How total is computed: raw_score = Σ(value×weight); total = (raw_score/1.4)×100
     total_formula: str = Field(
         default="",
@@ -143,6 +145,7 @@ class CandidateMatch(BaseModel):
     # ── Categories ───────────────────────────────────────
     job_categories_primary: list[str] = Field(default_factory=list)
     job_categories_secondary: list[str] = Field(default_factory=list)
+    job_category_labels: list[str] = Field(default_factory=list, description="Profession category labels (e.g. Buchhalter)")
 
     # ── Profile meta ─────────────────────────────────────
     profile_status: str = ""

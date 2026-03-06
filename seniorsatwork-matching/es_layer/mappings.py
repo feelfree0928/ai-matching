@@ -76,12 +76,19 @@ CANDIDATES_MAPPING = {
             "index": True,
             "similarity": "cosine",
         },
-        "skills_text": {"type": "text"},
+        "skills_text": {
+            "type": "text",
+            "fields": {
+                "keyword": {"type": "keyword"},
+                "german": {"type": "text", "analyzer": "german"},
+            },
+        },
         "education_text": {"type": "text"},
         "birth_year": {"type": "integer"},
         "retired": {"type": "boolean"},
         "job_categories_primary": {"type": "keyword"},
         "job_categories_secondary": {"type": "keyword"},
+        "job_category_labels": {"type": "keyword"},
         # ── Identity & contact ───────────────────────────
         "candidate_name": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
         "phone": {"type": "keyword"},
@@ -134,7 +141,13 @@ JOBS_MAPPING = {
             "index": True,
             "similarity": "cosine",
         },
-        "required_skills_text": {"type": "text"},
+        "required_skills_text": {
+            "type": "text",
+            "fields": {
+                "keyword": {"type": "keyword"},
+                "german": {"type": "text", "analyzer": "german"},
+            },
+        },
         "skills_embedding": {
             "type": "dense_vector",
             "dims": DENSE_DIMS,
@@ -161,6 +174,7 @@ JOBS_MAPPING = {
                 "min_level": {"type": "keyword"},
             },
         },
+        "job_category_labels": {"type": "keyword"},
     },
 }
 

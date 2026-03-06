@@ -12,6 +12,7 @@ from es_layer.mappings import CANDIDATES_INDEX, SENIORITY_TO_INT
 from es_layer.queries import build_hard_filters, build_script_score
 
 from api.config import DEFAULT_WEIGHTS, get_max_results, get_max_raw_score, get_min_score_raw, get_weights
+from api.skills_stopwords import clean_skill_tokens
 from api.models import (
     CandidateLanguage,
     CandidateMatch,
@@ -27,6 +28,17 @@ from api.title_match import normalize_job_title_for_matching, score_title_fit_ba
 # Default zero vector when job has no text for a dimension
 def _zero_vec():
     return [0.0] * 1536
+
+
+def _to_list(val: Any) -> list:
+    """Normalize to list (for job_category_labels etc.)."""
+    if val is None:
+        return []
+    if isinstance(val, list):
+        return val
+    if isinstance(val, str):
+        return [val] if val.strip() else []
+    return []
 
 
 def _job_embeddings(req: JobMatchRequest, client=None):
@@ -101,11 +113,12 @@ def _build_rank_explanation(
     elif cand_seniority:
         bullets.append(f"Seniority: {cand_seniority} (expected: {job_seniority})")
 
-    # Skills: keyword overlap
+    # Skills: keyword overlap (only clean tokens — no stopwords like an/der/im)
     skills_text = (src.get("skills_text") or "").lower()
     required_skills = (req.required_skills or "").lower()
     if skills_text and required_skills:
-        req_tokens = set(w.strip() for w in required_skills.replace(",", " ").split() if len(w.strip()) > 1)
+        raw_tokens = [w.strip() for w in required_skills.replace(",", " ").split() if w.strip()]
+        req_tokens = set(clean_skill_tokens(raw_tokens))
         found = [t for t in req_tokens if t in skills_text][:5]
         if found:
             bullets.append("Skills: " + ", ".join(found))
@@ -154,6 +167,7 @@ def run_match(
         edu_vec=edu_vec,
         expected_seniority_int=job_seniority_int,
         weights=weights,
+        job_category_labels=req.job_category_labels or [],
     )
 
     effective_min_score = req.min_score if req.min_score is not None else min_score
@@ -228,6 +242,7 @@ def run_match(
         ("seniority", "Seniority"),
         ("education", "Education"),
         ("language", "Language"),
+        ("category", "Category"),
     ]
     for i, h in enumerate(hits):
         src = h.get("_source") or {}
@@ -246,6 +261,7 @@ def run_match(
                 edu_vec,
                 job_seniority_int,
                 src,
+                job_category_labels=req.job_category_labels or [],
                 include_experience_detail=True,
             )
             score_calculation = []
@@ -253,14 +269,17 @@ def run_match(
                 value = breakdown_vals.get(key, 0.0)
                 weight = w.get(key, DEFAULT_WEIGHTS.get(key, 0))
                 contrib_raw = value * weight
-                # Contribution as share of 100: (value×weight / max_raw) × 100 so contributions sum to total_norm
-                contribution = round((contrib_raw / max_raw * 100.0), 1) if max_raw else 0.0
+                # Contribution = (value×weight / max_raw) × 100; use 2 decimals then round sum for consistency
+                contrib_exact = (contrib_raw / max_raw * 100.0) if max_raw else 0.0
+                contribution = round(contrib_exact, 2)
                 score_calculation.append({
                     "parameter": label,
                     "value": round(value, 3),
                     "weight": weight,
                     "contribution": contribution,
                 })
+            # Total = sum of contributions so display is internally consistent (avoids rounding drift)
+            total_from_contrib = round(sum(c["contribution"] for c in score_calculation), 1)
             title_score = round(breakdown_vals.get("title", 0), 3)
             industry_score = round(breakdown_vals.get("industry", 0), 3)
             experience_score = round(breakdown_vals.get("experience", 0), 3)
@@ -268,11 +287,23 @@ def run_match(
             seniority_score = round(breakdown_vals.get("seniority", 0), 3)
             education_score = round(breakdown_vals.get("education", 0), 3)
             language_score = round(breakdown_vals.get("language", 0), 3)
-            total_formula = f"total = (raw_score / max_raw) × 100 (probability); max_raw = {round(max_raw, 2)}"
-            parts = [f"{c['parameter']}: {c['value']} × {c['weight']} = {c['contribution']}" for c in score_calculation]
-            score_display = f"Score {round(total_norm, 1)} ({', '.join(parts)})"
+            category_score = round(breakdown_vals.get("category", 1.0), 3)
+            total_formula = f"total = Σ contributions; each = (value×weight/max_raw)×100; max_raw={round(max_raw, 2)}"
+            # Use → not = since contribution is (value×weight/max_raw)×100, not value×weight
+            parts = [f"{c['parameter']}: {c['value']}×{c['weight']}→{c['contribution']}" for c in score_calculation]
+            score_display = f"Score {total_from_contrib} ({', '.join(parts)})"
         else:
             score_calculation = []
+            for key, label in PARAM_ORDER:
+                weight = w.get(key, DEFAULT_WEIGHTS.get(key, 0))
+                contribution = round((total_norm * weight), 2)
+                score_calculation.append({
+                    "parameter": label,
+                    "value": round(total_norm, 3),
+                    "weight": weight,
+                    "contribution": contribution,
+                })
+            total_from_contrib = round(sum(c["contribution"] for c in score_calculation), 1)
             title_score = round(total_norm * w.get("title", DEFAULT_WEIGHTS["title"]), 1)
             industry_score = round(total_norm * w.get("industry", DEFAULT_WEIGHTS["industry"]), 1)
             experience_score = round(total_norm * w.get("experience", DEFAULT_WEIGHTS["experience"]), 1)
@@ -280,21 +311,15 @@ def run_match(
             seniority_score = round(total_norm * w.get("seniority", DEFAULT_WEIGHTS["seniority"]), 1)
             education_score = round(total_norm * w.get("education", DEFAULT_WEIGHTS["education"]), 1)
             language_score = round(total_norm * w.get("language", DEFAULT_WEIGHTS["language"]), 1)
-            for key, label in PARAM_ORDER:
-                weight = w.get(key, DEFAULT_WEIGHTS.get(key, 0))
-                contribution = round((total_norm * weight), 1)
-                score_calculation.append({
-                    "parameter": label,
-                    "value": round(total_norm, 3),
-                    "weight": weight,
-                    "contribution": contribution,
-                })
-            total_formula = f"total = (raw_score / max_raw) × 100 (probability, breakdown approximate); max_raw = {round(max_raw, 2)}"
-            parts = [f"{c['parameter']}: {c['value']} × {c['weight']} = {c['contribution']}" for c in score_calculation]
-            score_display = f"Score {round(total_norm, 1)} ({', '.join(parts)})"
+            category_score = round(total_norm * w.get("category", DEFAULT_WEIGHTS.get("category", 0)), 1)
+            total_formula = f"total = (raw_score / max_raw) × 100 (approximate); max_raw = {round(max_raw, 2)}"
+            parts = [f"{c['parameter']}: {c['value']}×{c['weight']}→{c['contribution']}" for c in score_calculation]
+            score_display = f"Score {total_from_contrib} ({', '.join(parts)})"
 
+        # Total = sum of contributions so display is internally consistent
+        display_total = total_from_contrib
         breakdown = ScoreBreakdown(
-            total=round(total_norm, 1),
+            total=display_total,
             raw_score=round(score_raw, 4),
             title_score=title_score,
             industry_score=industry_score,
@@ -303,6 +328,7 @@ def run_match(
             seniority_score=seniority_score,
             education_score=education_score,
             language_score=language_score,
+            category_score=category_score,
             total_formula=total_formula,
             score_calculation=score_calculation,
             score_display=score_display,
@@ -401,6 +427,7 @@ def run_match(
             # categories
             job_categories_primary=job_cats_primary,
             job_categories_secondary=job_cats_secondary,
+            job_category_labels=_to_list(src.get("job_category_labels")),
             # profile meta
             profile_status=(src.get("profile_status") or "").strip(),
             registered_at=src.get("registered_at"),
@@ -422,7 +449,31 @@ def run_match(
                 combined = []
                 for m in matches:
                     fit = title_fit_scores.get(m.post_id, 5.0)
-                    new_breakdown = m.score.model_copy(update={"llm_title_fit": round(fit, 1)})
+                    es_total = m.score.total or 0
+                    blended = 0.8 * es_total + 0.2 * ((fit or 5) / 10.0) * 100
+                    llm_contrib = round(0.2 * ((fit or 5) / 10.0) * 100, 2)
+                    # Scale ES contributions by 0.8 and add LLM so total = blended
+                    new_calc = []
+                    for c in (m.score.score_calculation or []):
+                        new_calc.append({**c, "contribution": round(c.get("contribution", 0) * 0.8, 2)})
+                    new_calc.append({
+                        "parameter": "LLM Title Fit",
+                        "value": round(fit, 1),
+                        "weight": 0.2,
+                        "contribution": llm_contrib,
+                    })
+                    blended_total = round(sum(c["contribution"] for c in new_calc), 1)
+                    new_parts = [f"{c['parameter']}: {c.get('value','')}×{c.get('weight','')}→{c['contribution']}" for c in new_calc]
+                    new_display = f"Score {blended_total} ({', '.join(new_parts)})"
+                    new_breakdown = m.score.model_copy(
+                        update={
+                            "llm_title_fit": round(fit, 1),
+                            "total": blended_total,
+                            "score_calculation": new_calc,
+                            "score_display": new_display,
+                            "total_formula": "total = 80% ES + 20% LLM title fit (0–10); contributions sum to total",
+                        }
+                    )
                     combined.append(m.model_copy(update={"score": new_breakdown}))
                 # Sort by 80% ES-derived total + 20% LLM title fit (0-10 -> 0-100 scale)
                 combined.sort(

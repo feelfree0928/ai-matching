@@ -112,6 +112,7 @@ def fetch_modified_jobs(since: str | None) -> list[dict]:
 
 
 def main() -> None:
+    from etl.extractor import fetch_job_categories_standalone, fetch_term_labels_standalone
     from etl.transformer import transform_job
     from es_layer.indexer import bulk_index_jobs, get_es_client
 
@@ -131,10 +132,16 @@ def main() -> None:
         set_last_synced(sync_start)
         return
 
+    post_ids = [r["post_id"] for r in raw_jobs]
+    job_categories = fetch_job_categories_standalone(post_ids)
+    term_labels = fetch_term_labels_standalone()
+    for rj in raw_jobs:
+        rj["job_category_labels"] = job_categories.get(rj["post_id"], [])
+
     transformed = []
     for rj in raw_jobs:
         try:
-            j = transform_job(rj)
+            j = transform_job(rj, term_labels=term_labels)
             transformed.append(j)
         except Exception as e:
             print(f"Skip job post_id={rj.get('post_id')}: {e}")

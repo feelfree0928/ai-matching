@@ -60,6 +60,7 @@ def compute_breakdown(
     job_seniority_int: int,
     doc_source: dict[str, Any],
     *,
+    job_category_labels: list[str] | None = None,
     include_experience_detail: bool = True,
 ) -> tuple[dict[str, float], dict[str, Any] | None]:
     """
@@ -67,14 +68,16 @@ def compute_breakdown(
 
     Returns:
         (breakdown, experience_detail): breakdown has keys title, industry, experience,
-        skills, seniority, education, language with the same values used in the ES script.
+        skills, seniority, education, language, category with the same values used in the ES script.
         experience_detail is optional dict for UI (primYears, secYears, primRel, etc.).
     """
-    # Similarity dimensions (cosine + 1, range [0, 2])
-    title_sim = _cosine_sim_plus_one(
-        title_vec,
-        doc_source.get("aggregated_title_embedding"),
-    )
+    # Title: prefer primary_role_title_embedding (main profession) over aggregated (blended career)
+    prim_title_embedding = doc_source.get("primary_role_title_embedding")
+    agg_title_embedding = doc_source.get("aggregated_title_embedding")
+    if prim_title_embedding and isinstance(prim_title_embedding, list) and len(prim_title_embedding) == len(title_vec):
+        title_sim = _cosine_sim_plus_one(title_vec, prim_title_embedding)
+    else:
+        title_sim = _cosine_sim_plus_one(title_vec, agg_title_embedding)
     industry_sim = _cosine_sim_plus_one(
         industry_vec,
         doc_source.get("aggregated_industry_embedding"),
@@ -95,7 +98,6 @@ def compute_breakdown(
     if total_years <= 0 and (prim_years or sec_years):
         total_years = prim_years + sec_years
     prim_title_str = _get_str(doc_source, "primary_role_title")
-    prim_title_embedding = doc_source.get("primary_role_title_embedding")
 
     prim_title_sim = title_sim
     if prim_title_embedding and isinstance(prim_title_embedding, list) and len(prim_title_embedding) == len(title_vec):
@@ -129,6 +131,17 @@ def compute_breakdown(
     lang_lvl = _get_float(doc_source, "language_level_max")
     lang_score = 1.0 + lang_lvl / 7.0
 
+    # Category: 2.0 if overlap, 0.5 if job has categories and no match, 1.0 if job has no categories
+    job_cats = job_category_labels or []
+    cand_cats = doc_source.get("job_category_labels") or []
+    if isinstance(cand_cats, str):
+        cand_cats = [cand_cats] if cand_cats else []
+    if not job_cats:
+        cat_score = 1.0
+    else:
+        has_match = any(str(jc) in [str(c) for c in cand_cats] for jc in job_cats)
+        cat_score = 2.0 if has_match else 0.5
+
     breakdown = {
         "title": title_sim,
         "industry": industry_sim,
@@ -137,6 +150,7 @@ def compute_breakdown(
         "seniority": seniority_value,
         "education": edu_sim,
         "language": lang_score,
+        "category": cat_score,
     }
 
     experience_detail = None

@@ -60,6 +60,9 @@ def get_job_matches(post_id: int) -> MatchResponse:
         for item in raw_langs
         if item.get("name") or item.get("lang")
     ]
+    job_cat_labels = src.get("job_category_labels") or []
+    if isinstance(job_cat_labels, str):
+        job_cat_labels = [job_cat_labels] if job_cat_labels else []
     req = JobMatchRequest(
         post_id=post_id,
         title=src.get("title", ""),
@@ -73,6 +76,7 @@ def get_job_matches(post_id: int) -> MatchResponse:
         pensum_min=src.get("pensum_min", 0),
         pensum_max=src.get("pensum_max", 100),
         required_languages=required_languages,
+        job_category_labels=job_cat_labels,
     )
     return run_match(req)
 
