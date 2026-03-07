@@ -43,8 +43,7 @@ class ScoreBreakdown(BaseModel):
     seniority_score: float = 0.0
     education_score: float = 0.0
     language_score: float = 0.0
-    category_score: float = 0.0
-    # How total is computed: raw_score = Σ(value×weight); total = (raw_score/1.4)×100
+    # How total is computed: raw_score = Σ(value×weight); total = (raw_score/max_raw)×100
     total_formula: str = Field(
         default="",
         description="Short explanation: raw_score = Σ(value × weight); total = (raw_score / 1.4) × 100",
@@ -62,12 +61,7 @@ class ScoreBreakdown(BaseModel):
     # How experience was calculated (primary_years, secondary_years, exp_primary, exp_secondary, etc.)
     experience_detail: Optional[dict[str, Any]] = Field(
         default=None,
-        description="Experience sub-components for tooltips: primary_years, secondary_years, primary_relevance, exp_primary, exp_secondary, none_penalty",
-    )
-    # LLM title fit 0-10: how well the candidate's main role title matches the job title (no re-embedding).
-    llm_title_fit: Optional[float] = Field(
-        default=None,
-        description="Optional 0-10 score from LLM: title relevance of candidate's main role to job title",
+        description="Experience sub-components for tooltips: primary_years, secondary_years, primary_relevance, exp_primary, exp_secondary",
     )
 
 

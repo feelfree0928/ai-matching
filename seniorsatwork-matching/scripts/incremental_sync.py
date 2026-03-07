@@ -114,9 +114,7 @@ def main() -> None:
         print("Nothing to sync.")
         return
 
-    titles_path = os.path.join(os.path.dirname(__file__), "..", "standardized_titles.txt")
     from etl.extractor import fetch_term_labels_standalone
-    from etl.title_standardizer import load_standardized_titles, apply_standardized_titles
     from etl.transformer import transform_candidate
     from etl.experience_scorer import apply_experience_scoring
     from embeddings.generator import add_embeddings_to_candidate
@@ -124,7 +122,6 @@ def main() -> None:
     from openai import OpenAI
     from tqdm import tqdm
 
-    standardized_titles = load_standardized_titles(titles_path)
     term_labels = fetch_term_labels_standalone()
     client = OpenAI()
     es = get_es_client()
@@ -134,7 +131,6 @@ def main() -> None:
         try:
             c = transform_candidate(raw, term_labels=term_labels)
             apply_experience_scoring(c)
-            apply_standardized_titles(c, standardized_titles, client=client)
             add_embeddings_to_candidate(c, client)
             if c.get("location", {}).get("lat") is not None and c.get("location", {}).get("lon") is not None:
                 if c.get("aggregated_title_embedding") is not None:

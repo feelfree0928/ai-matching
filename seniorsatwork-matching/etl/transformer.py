@@ -10,6 +10,7 @@ from typing import Any
 
 import phpserialize
 from bs4 import BeautifulSoup, MarkupResemblesLocatorWarning
+from etl.experience_scorer import CURRENT_YEAR
 
 # Resume fields sometimes look like URLs; we intentionally parse them as HTML.
 warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
@@ -20,7 +21,7 @@ SENIORITY_LEVELS = ["junior", "mid", "senior", "manager", "director", "executive
 SENIORITY_KEYWORDS = {
     "junior": ["junior", "assistant", "trainee", "praktikant", "azubi", "ausbildung"],
     "mid": ["sachbearbeiter", "specialist", "coordinator", "fachmann", "fachfrau", "mitarbeiter"],
-    "senior": ["senior", "lead ", "expert", "principal", "fachexperte", "erfahren"],
+    "senior": ["senior", "lead", "expert", "principal", "fachexperte", "erfahren"],
     "manager": ["manager", "leiter", "head of", "abteilungsleiter", "teamleiter", "team lead"],
     "director": ["director", "vp ", "vice president", "bereichsleiter", "vice president"],
     "executive": ["ceo", "cfo", "cto", "coo", "geschäftsführer", "vorsitzender", "präsident", "president"],
@@ -133,21 +134,29 @@ def _safe_int(s: Any, default: int = 0) -> int:
 
 
 def _find_industry_key(entry: dict) -> str:
-    """Entry keys may be bytes or str; industry is in job_field_most_experience_branches* (PHP array of strings)."""
+    """Entry keys may be bytes or str; industry is in job_field_most_experience_branches* (PHP array of strings).
+    Collects ALL industry values from the PHP array and joins them (previously only the first was returned).
+    """
     for k in entry:
         key = k.decode("utf-8", errors="replace") if isinstance(k, bytes) else k
         if isinstance(key, str) and "job_field_most_experience_branches" in key:
             val = entry[k]
             if isinstance(val, dict):
-                # PHP array: {0: b"Industry A", 1: b"Industry B"}
+                # PHP array: {0: b"Industry A", 1: b"Industry B"} — collect ALL values
+                parts = []
                 for ik in sorted(x for x in val if isinstance(x, int)):
                     v = val[ik]
-                    if isinstance(v, bytes):
-                        return v.decode("utf-8", errors="replace")
-                    return str(v)
+                    s = v.decode("utf-8", errors="replace") if isinstance(v, bytes) else str(v)
+                    if s:
+                        parts.append(s)
+                return ", ".join(parts) if parts else ""
             if isinstance(val, (list, tuple)) and val:
-                first = val[0]
-                return first.decode("utf-8", errors="replace") if isinstance(first, bytes) else str(first)
+                parts = []
+                for item in val:
+                    s = item.decode("utf-8", errors="replace") if isinstance(item, bytes) else str(item)
+                    if s:
+                        parts.append(s)
+                return ", ".join(parts) if parts else ""
             if isinstance(val, bytes):
                 return val.decode("utf-8", errors="replace")
             return str(val) if val else ""
@@ -227,10 +236,16 @@ def parse_work_experiences(meta_value: str | None) -> list[dict[str, Any]]:
         
         start_year = _safe_int(von, 0)
         bis_lower = bis.strip().lower() if bis else ""
-        end_year = 2026 if (bis_lower == "now") else _safe_int(bis, 2026)
+        # Only map "now" / empty bis to CURRENT_YEAR; unknown/unparseable values are dropped
+        # (previously they defaulted to 2026, making stale roles appear ongoing).
+        if bis_lower in ("now", ""):
+            end_year = CURRENT_YEAR
+        else:
+            end_year = _safe_int(bis, 0)
         if start_year <= 0 or end_year <= 0:
             continue
-        years_in_role = max(1, end_year - start_year)
+        # Same-year roles (e.g. a 3-month internship) get 0.5 instead of 1 full year
+        years_in_role = 0.5 if end_year == start_year else max(1, end_year - start_year)
 
         result.append({
             "raw_title": raw_title or "",
@@ -295,12 +310,15 @@ def _match_seniority(title: str) -> str:
 
 def infer_seniority(work_experiences: list[dict[str, Any]]) -> str:
     """
-    Infer seniority from most recent job title (first in list after parsing).
+    Infer seniority from the most recent job title (highest end_year).
+    Previously used work_experiences[0] which is typically the oldest entry.
     Returns one of: junior, mid, senior, manager, director, executive.
     """
     if not work_experiences:
         return "mid"
-    title = (work_experiences[0].get("raw_title") or "").lower()
+    # Find the experience with the highest end_year (most recent role)
+    most_recent = max(work_experiences, key=lambda e: int(e.get("end_year", 0) or 0))
+    title = (most_recent.get("raw_title") or "").lower()
     if not title:
         return "mid"
     return _match_seniority(title)

@@ -23,9 +23,9 @@ from api.models import (
 )
 from api.score_breakdown import compute_breakdown, has_breakdown_data
 from embeddings.generator import embed_text
-from api.title_match import normalize_job_title_for_matching, score_title_fit_batch
+from api.title_match import normalize_and_resolve_categories, normalize_job_title_for_matching
 
-# Default zero vector when job has no text for a dimension
+
 def _zero_vec():
     return [0.0] * 1536
 
@@ -41,21 +41,39 @@ def _to_list(val: Any) -> list:
     return []
 
 
-def _job_embeddings(req: JobMatchRequest, client=None):
+def _job_embeddings(req: JobMatchRequest, client=None) -> tuple:
+    """
+    Build job vectors for all scoring dimensions and resolve category labels.
+
+    Returns:
+        (title_vec, industry_vec, skills_vec, edu_vec, resolved_categories)
+
+    If req.job_category_labels is provided: 1 LLM call (title normalization only).
+    If req.job_category_labels is empty: 1 LLM call (title normalization + category resolution).
+    If categories already provided (from indexed job): 0 LLM calls.
+    """
     from openai import OpenAI
+    from api.category_cache import get_known_category_labels
+
     c = client or OpenAI()
-    # Title-only vector for the title dimension: do NOT mix in industry or skills,
-    # so we compare job title to candidate title directly (fixes e.g. Night Receptionist
-    # ranking below Job Assistant when the job is for night receptionist).
-    # Optional: normalize job title with LLM first (handles "Nacht Rezeptionist/in (m/w/d)" etc.).
     raw_title = (req.title or "").strip() or " "
-    normalized_title = normalize_job_title_for_matching(raw_title, c)
-    title_text = normalized_title if normalized_title else raw_title
+    resolved_categories: list[str] = list(req.job_category_labels or [])
+
+    if resolved_categories:
+        # Categories already provided (e.g. from indexed job) — just normalize title
+        normalized_title = normalize_job_title_for_matching(raw_title, c)
+        title_text = normalized_title if normalized_title else raw_title
+    else:
+        # No categories — single LLM call handles both normalization and category resolution
+        known_labels = get_known_category_labels()
+        normalized_title, resolved_categories = normalize_and_resolve_categories(raw_title, known_labels, c)
+        title_text = normalized_title if normalized_title else raw_title
+
     title_vec = embed_text(title_text, c)
     industry_vec = embed_text(req.industry or " ", c) if req.industry else _zero_vec()
     skills_vec = embed_text(req.required_skills or " ", c) if req.required_skills else _zero_vec()
     edu_vec = embed_text(req.required_education or " ", c) if req.required_education else _zero_vec()
-    return title_vec, industry_vec, skills_vec, edu_vec
+    return title_vec, industry_vec, skills_vec, edu_vec, resolved_categories
 
 
 def _build_rank_explanation(
@@ -74,25 +92,21 @@ def _build_rank_explanation(
     cand_seniority = (src.get("seniority_level") or "").strip().lower()
     job_seniority = (req.expected_seniority_level or "senior").strip().lower()
 
-    # Title: job title word overlap with work experience titles
+    # Title: job title word overlap with work experience titles (single word sufficient for German nouns)
     for exp in work_experiences:
         raw = (exp.get("raw_title") or "").strip()
         if not raw:
             continue
         title_words = set(raw.lower().split())
         overlap = job_title_words & title_words
-        if len(overlap) >= 2:
+        if len(overlap) >= 1:
             bullets.append(f"Job title match: {raw}")
             break
     if not any("Job title match" in b for b in bullets) and work_experiences:
         best = max(work_experiences, key=lambda x: float(x.get("weighted_years", 0) or 0))
-        std_title = (best.get("standardized_title") or "").strip()
         raw_title = (best.get("raw_title") or "").strip()
-        best_title = raw_title
-        if std_title and std_title.upper() != "NONE":
-            best_title = std_title
-        if best_title:
-            bullets.append(f"Most relevant role: {best_title}")
+        if raw_title:
+            bullets.append(f"Most relevant role: {raw_title}")
 
     # Experience
     years = float(src.get("total_weighted_relevant_years", 0) or 0)
@@ -138,7 +152,7 @@ def run_match(
     index: str | None = None,
 ) -> MatchResponse:
     """
-    Run matching: hard filters + script_score, return ranked shortlist with score breakdown.
+    Run matching: category hard filter + script_score, return ranked shortlist with score breakdown.
     index: optional index name (default CANDIDATES_INDEX); used for golden test.
     """
     es = es or get_es_client()
@@ -147,18 +161,8 @@ def run_match(
     max_results = max_results_override if max_results_override is not None else (req.max_results or get_max_results())
     weights = get_weights()
 
-    title_vec, industry_vec, skills_vec, edu_vec = _job_embeddings(req)
+    title_vec, industry_vec, skills_vec, edu_vec, resolved_cats = _job_embeddings(req)
     job_seniority_int = SENIORITY_TO_INT.get(req.expected_seniority_level.strip().lower(), 2)
-
-    filters = build_hard_filters(
-        location_lat=req.location_lat,
-        location_lon=req.location_lon,
-        radius_km=req.radius_km,
-        pensum_min=req.pensum_min,
-        pensum_max=req.pensum_max,
-        required_languages=[{"name": l.name, "min_level": l.min_level} for l in req.required_languages],
-        required_available_before=req.required_available_before,
-    )
 
     script = build_script_score(
         title_vec=title_vec,
@@ -167,20 +171,29 @@ def run_match(
         edu_vec=edu_vec,
         expected_seniority_int=job_seniority_int,
         weights=weights,
-        job_category_labels=req.job_category_labels or [],
     )
 
     effective_min_score = req.min_score if req.min_score is not None else min_score
-
-    # No source_excludes: we need embedding and scalar fields in _source to compute real score breakdown.
     _FALLBACK_THRESHOLDS = [1.30, 1.15]
 
-    def _do_search(min_s: float):
+    def _build_filters(cat_labels: list[str] | None = None) -> list[dict]:
+        return build_hard_filters(
+            location_lat=req.location_lat,
+            location_lon=req.location_lon,
+            radius_km=req.radius_km,
+            pensum_min=req.pensum_min,
+            pensum_max=req.pensum_max,
+            required_languages=[{"name": l.name, "min_level": l.min_level} for l in req.required_languages],
+            required_available_before=req.required_available_before,
+            job_category_labels=cat_labels or [],
+        )
+
+    def _do_search(min_s: float, cat_labels: list[str] | None = None):
         return es.search(
             index=index_name,
             query={
                 "script_score": {
-                    "query": {"bool": {"filter": filters}},
+                    "query": {"bool": {"filter": _build_filters(cat_labels)}},
                     "script": script["script"],
                 }
             },
@@ -189,13 +202,16 @@ def run_match(
         )
 
     try:
-        resp = _do_search(effective_min_score)
-        # If nothing came back, progressively lower the threshold
+        resp = _do_search(effective_min_score, resolved_cats)
+        # Fallback 1: category filter returned no hits (index not yet rebuilt with categories)
+        if not resp.get("hits", {}).get("hits") and resolved_cats:
+            resp = _do_search(effective_min_score, cat_labels=[])
+        # Fallback 2: progressively lower score threshold
         if not resp.get("hits", {}).get("hits"):
             for fallback in _FALLBACK_THRESHOLDS:
                 if fallback >= effective_min_score:
                     continue
-                resp = _do_search(fallback)
+                resp = _do_search(fallback, cat_labels=[])
                 if resp.get("hits", {}).get("hits"):
                     break
     except BadRequestError as e:
@@ -233,7 +249,6 @@ def run_match(
         total_val = total
 
     matches = []
-    # Order and labels for score_calculation display
     PARAM_ORDER = [
         ("title", "Title"),
         ("industry", "Industry"),
@@ -242,14 +257,12 @@ def run_match(
         ("seniority", "Seniority"),
         ("education", "Education"),
         ("language", "Language"),
-        ("category", "Category"),
     ]
     for i, h in enumerate(hits):
         src = h.get("_source") or {}
         score_raw = float(h.get("_score", 0))
         w = weights
         max_raw = get_max_raw_score(w)
-        # Probability-based score: (raw / max_raw) × 100 so it never exceeds 100.
         total_norm = min(100.0, max(0.0, (score_raw / max_raw) * 100.0)) if max_raw > 0 else 0.0
 
         experience_detail = None
@@ -261,7 +274,6 @@ def run_match(
                 edu_vec,
                 job_seniority_int,
                 src,
-                job_category_labels=req.job_category_labels or [],
                 include_experience_detail=True,
             )
             score_calculation = []
@@ -269,7 +281,6 @@ def run_match(
                 value = breakdown_vals.get(key, 0.0)
                 weight = w.get(key, DEFAULT_WEIGHTS.get(key, 0))
                 contrib_raw = value * weight
-                # Contribution = (value×weight / max_raw) × 100; use 2 decimals then round sum for consistency
                 contrib_exact = (contrib_raw / max_raw * 100.0) if max_raw else 0.0
                 contribution = round(contrib_exact, 2)
                 score_calculation.append({
@@ -278,7 +289,6 @@ def run_match(
                     "weight": weight,
                     "contribution": contribution,
                 })
-            # Total = sum of contributions so display is internally consistent (avoids rounding drift)
             total_from_contrib = round(sum(c["contribution"] for c in score_calculation), 1)
             title_score = round(breakdown_vals.get("title", 0), 3)
             industry_score = round(breakdown_vals.get("industry", 0), 3)
@@ -287,9 +297,7 @@ def run_match(
             seniority_score = round(breakdown_vals.get("seniority", 0), 3)
             education_score = round(breakdown_vals.get("education", 0), 3)
             language_score = round(breakdown_vals.get("language", 0), 3)
-            category_score = round(breakdown_vals.get("category", 1.0), 3)
             total_formula = f"total = Σ contributions; each = (value×weight/max_raw)×100; max_raw={round(max_raw, 2)}"
-            # Use → not = since contribution is (value×weight/max_raw)×100, not value×weight
             parts = [f"{c['parameter']}: {c['value']}×{c['weight']}→{c['contribution']}" for c in score_calculation]
             score_display = f"Score {total_from_contrib} ({', '.join(parts)})"
         else:
@@ -311,12 +319,10 @@ def run_match(
             seniority_score = round(total_norm * w.get("seniority", DEFAULT_WEIGHTS["seniority"]), 1)
             education_score = round(total_norm * w.get("education", DEFAULT_WEIGHTS["education"]), 1)
             language_score = round(total_norm * w.get("language", DEFAULT_WEIGHTS["language"]), 1)
-            category_score = round(total_norm * w.get("category", DEFAULT_WEIGHTS.get("category", 0)), 1)
             total_formula = f"total = (raw_score / max_raw) × 100 (approximate); max_raw = {round(max_raw, 2)}"
             parts = [f"{c['parameter']}: {c['value']}×{c['weight']}→{c['contribution']}" for c in score_calculation]
             score_display = f"Score {total_from_contrib} ({', '.join(parts)})"
 
-        # Total = sum of contributions so display is internally consistent
         display_total = total_from_contrib
         breakdown = ScoreBreakdown(
             total=display_total,
@@ -328,7 +334,6 @@ def run_match(
             seniority_score=seniority_score,
             education_score=education_score,
             language_score=language_score,
-            category_score=category_score,
             total_formula=total_formula,
             score_calculation=score_calculation,
             score_display=score_display,
@@ -338,9 +343,8 @@ def run_match(
         most_relevant = ""
         if work_experiences_raw:
             best = max(work_experiences_raw, key=lambda x: float(x.get("weighted_years", 0) or 0))
-            std_title = (best.get("standardized_title") or "").strip()
             raw_title = (best.get("raw_title") or "").strip()
-            most_relevant = std_title if std_title and std_title.upper() != "NONE" else raw_title
+            most_relevant = raw_title
         industries = list(dict.fromkeys(exp.get("industry") for exp in work_experiences_raw if exp.get("industry")))[:5]
         addr = src.get("address") or ""
 
@@ -390,7 +394,6 @@ def run_match(
             linkedin_url=(src.get("linkedin_url") or "").strip(),
             website_url=(src.get("website_url") or "").strip(),
             cv_file=(src.get("cv_file") or "").strip(),
-            # profile text
             short_description=(src.get("short_description") or "").strip(),
             job_expectations=(src.get("job_expectations") or "").strip(),
             highest_degree=(src.get("highest_degree") or "").strip(),
@@ -398,7 +401,6 @@ def run_match(
             ai_experience_description=(src.get("ai_experience_description") or "").strip(),
             ai_skills_description=(src.get("ai_skills_description") or "").strip(),
             ai_text_skill_result=(src.get("ai_text_skill_result") or "").strip(),
-            # experience & skills
             most_relevant_role=most_relevant,
             total_relevant_years=float(src.get("total_weighted_relevant_years", 0) or 0),
             seniority_level=src.get("seniority_level", ""),
@@ -407,28 +409,22 @@ def run_match(
             education_text=(src.get("education_text") or "").strip(),
             most_experience_industries=most_exp_industries,
             top_industries=industries,
-            # languages
             languages=languages,
-            # location
             location=addr,
             zip_code=(src.get("zip_code") or "").strip(),
             work_radius_km=int(src.get("work_radius_km", 50) or 50),
             work_radius_text=(src.get("work_radius_text") or "").strip(),
-            # availability & contract
             available_from=src.get("available_from"),
             pensum_desired=int(src.get("pensum_desired", 100) or 100),
             pensum_from=int(src.get("pensum_from", 0) or 0),
             pensum_duration=(src.get("pensum_duration") or "").strip(),
             on_contract_basis=bool(src.get("on_contract_basis", False)),
             voluntary=(src.get("voluntary") or "").strip(),
-            # personal
             birth_year=src.get("birth_year"),
             retired=bool(src.get("retired", False)),
-            # categories
             job_categories_primary=job_cats_primary,
             job_categories_secondary=job_cats_secondary,
             job_category_labels=_to_list(src.get("job_category_labels")),
-            # profile meta
             profile_status=(src.get("profile_status") or "").strip(),
             registered_at=src.get("registered_at"),
             expires_at=src.get("expires_at"),
@@ -436,65 +432,8 @@ def run_match(
             post_date=src.get("post_date"),
         ))
 
-    # LLM title-fit: score how well each candidate's main role matches the job title (no re-embedding).
-    # Blends into ranking so e.g. Night Receptionist ranks above Job Assistant for a night receptionist job.
-    did_llm_resort = False
-    if matches:
-        try:
-            from openai import OpenAI
-            llm_client = OpenAI()
-            job_title_for_llm = (req.title or "").strip()
-            title_fit_scores = score_title_fit_batch(job_title_for_llm, matches, llm_client)
-            if title_fit_scores:
-                combined = []
-                for m in matches:
-                    fit = title_fit_scores.get(m.post_id, 5.0)
-                    es_total = m.score.total or 0
-                    blended = 0.8 * es_total + 0.2 * ((fit or 5) / 10.0) * 100
-                    llm_contrib = round(0.2 * ((fit or 5) / 10.0) * 100, 2)
-                    # Scale ES contributions by 0.8 and add LLM so total = blended
-                    new_calc = []
-                    for c in (m.score.score_calculation or []):
-                        new_calc.append({**c, "contribution": round(c.get("contribution", 0) * 0.8, 2)})
-                    new_calc.append({
-                        "parameter": "LLM Title Fit",
-                        "value": round(fit, 1),
-                        "weight": 0.2,
-                        "contribution": llm_contrib,
-                    })
-                    blended_total = round(sum(c["contribution"] for c in new_calc), 1)
-                    new_parts = [f"{c['parameter']}: {c.get('value','')}×{c.get('weight','')}→{c['contribution']}" for c in new_calc]
-                    new_display = f"Score {blended_total} ({', '.join(new_parts)})"
-                    new_breakdown = m.score.model_copy(
-                        update={
-                            "llm_title_fit": round(fit, 1),
-                            "total": blended_total,
-                            "score_calculation": new_calc,
-                            "score_display": new_display,
-                            "total_formula": "total = 80% ES + 20% LLM title fit (0–10); contributions sum to total",
-                        }
-                    )
-                    combined.append(m.model_copy(update={"score": new_breakdown}))
-                # Sort by 80% ES-derived total + 20% LLM title fit (0-10 -> 0-100 scale)
-                combined.sort(
-                    key=lambda m: (
-                        -(0.8 * (m.score.total or 0) + 0.2 * ((m.score.llm_title_fit or 5) / 10.0) * 100),
-                        0 if (m.most_relevant_role or "").strip().upper() == "NONE" else -1,
-                    )
-                )
-                matches = combined
-                did_llm_resort = True
-        except Exception:
-            pass
-
-    # Tie-break when we did not use LLM resort: prefer candidates with a mapped role (most_relevant_role != NONE)
-    if not did_llm_resort:
-        matches.sort(
-            key=lambda m: (
-                -(m.score.total or 0),
-                0 if (m.most_relevant_role or "").strip().upper() == "NONE" else -1,
-            )
-        )
+    # Sort by total score descending
+    matches.sort(key=lambda m: -(m.score.total or 0))
     matches = [m.model_copy(update={"rank": i + 1}) for i, m in enumerate(matches)]
 
     return MatchResponse(

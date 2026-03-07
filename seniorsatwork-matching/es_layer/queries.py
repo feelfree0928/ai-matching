@@ -7,6 +7,12 @@ from typing import Any
 
 from .mappings import CANDIDATES_INDEX, DENSE_DIMS
 
+# Proficiency ladder: ascending order, covers both CEFR codes and WP label strings.
+_DEGREE_LADDER = [
+    "A1", "A2", "B1", "Intermediate", "B2", "C1", "Fluent", "C2", "Mother tongue", "Native",
+]
+_DEGREE_LADDER_UPPER = [d.upper() for d in _DEGREE_LADDER]
+
 
 def build_hard_filters(
     location_lat: float,
@@ -16,8 +22,9 @@ def build_hard_filters(
     pensum_max: int,
     required_languages: list[dict[str, str]],
     required_available_before: str | None = None,
+    job_category_labels: list[str] | None = None,
 ) -> list[dict]:
-    """Build filter context list for geo, pensum, languages, availability."""
+    """Build filter context list for geo, pensum, languages, availability, and category."""
     filters = [
         {"exists": {"field": "location"}},
         {
@@ -57,14 +64,25 @@ def build_hard_filters(
                     },
                 }
             })
+    if job_category_labels:
+        filters.append({
+            "terms": {"job_category_labels": job_category_labels}
+        })
     return filters
 
 
 def _acceptable_degrees(min_level: str) -> list[str]:
-    """Map CEFR / 'native' to WP degree labels."""
-    if min_level in ("C1", "C2", "NATIVE", "NATIVE "):
-        return ["Mother tongue", "Fluent"]
-    return ["Mother tongue", "Fluent", "Intermediate"]
+    """Map CEFR code or English label to all acceptable degree values (>= min_level).
+
+    Accepts CEFR codes (A1-C2) and English label strings (Intermediate, Fluent, Mother tongue).
+    Returns all values at or above the given minimum level.
+    """
+    normalized = min_level.strip().upper()
+    try:
+        idx = _DEGREE_LADDER_UPPER.index(normalized)
+    except ValueError:
+        return list(_DEGREE_LADDER)  # unknown level: accept all
+    return _DEGREE_LADDER[idx:]
 
 
 def build_knn(
@@ -89,11 +107,10 @@ def build_script_score(
     edu_vec: list[float],
     expected_seniority_int: int,
     weights: dict[str, float],
-    job_category_labels: list[str] | None = None,
 ) -> dict:
-    """Build script_score for 8-dimension scoring (title, industry, experience, skills, seniority, education, language, category).
+    """Build script_score for 7-dimension scoring (title, industry, experience, skills, seniority, education, language).
 
-    Experience uses a two-part model (Fix D):
+    Experience uses a two-part model:
       - Primary role (highest weighted_years single role): scored against its OWN title embedding.
         Only the primary role's cosine similarity to the job title gates its experience credit.
       - Secondary roles (all other experience combined): gated by the blended aggregated title
@@ -102,16 +119,16 @@ def build_script_score(
 
     The titleRel floor is 0.2 (not 0.5) so unrelated candidates receive ~4% of experience credit
     (titleRelSq = 0.04) instead of 25%.
+
+    Category is now a hard ES filter (in build_hard_filters), not a scored dimension.
     """
     w_t = weights.get("title", 0.15)
     w_i = weights.get("industry", 0.12)
     w_e = weights.get("experience", 0.25)
-    w_s = weights.get("skills", 0.25)
+    w_s = weights.get("skills", 0.35)
     w_sen = weights.get("seniority", 0.06)
     w_edu = weights.get("education", 0.05)
     w_lang = weights.get("language", 0.02)
-    w_cat = weights.get("category", 0.10)
-    job_cats = job_category_labels or []
     return {
         "script": {
             "source": """
@@ -130,51 +147,29 @@ def build_script_score(
                     ? doc['primary_role_weighted_years'].value : 0.0;
                 double secYears = doc['secondary_role_weighted_years'].size() > 0
                     ? doc['secondary_role_weighted_years'].value : 0.0;
-                double totalYears = doc['total_weighted_relevant_years'].size() > 0
-                    ? doc['total_weighted_relevant_years'].value : (primYears + secYears);
 
                 double primTitleSim = doc['primary_role_title_embedding'].size() == 0 ? titleSim
                     : cosineSimilarity(params.titleVec, 'primary_role_title_embedding') + 1.0;
                 double primRel    = Math.max(0.2, primTitleSim - 1.0);
                 double primRelSq  = primRel * primRel;
                 double yearsCap   = Math.min(1.0, primYears / 3.0);
-                def primTitle = doc['primary_role_title'].size() > 0 ? doc['primary_role_title'].value : '';
-                double nonePenalty = (primTitle.toString() == 'NONE') ? 0.10 : 1.0;
-                double expPrimary = (2.0 / (1.0 + Math.exp(-0.25 * primYears))) * primRelSq * yearsCap * nonePenalty;
+                double expPrimary = (2.0 / (1.0 + Math.exp(-0.25 * primYears))) * primRelSq * yearsCap;
 
                 double aggRel    = Math.max(0.2, titleSim - 1.0);
                 double aggRelSq  = aggRel * aggRel;
                 double expSecondary = (2.0 / (1.0 + Math.exp(-0.20 * secYears))) * aggRelSq * 0.30;
 
-                double expTotal = (totalYears > 0 && aggRel > 0)
-                    ? (2.0 / (1.0 + Math.exp(-0.15 * totalYears))) * aggRel * 0.25 : 0.0;
-                double expScore = expPrimary + expSecondary + expTotal;
+                double expScore = expPrimary + expSecondary;
 
-                def candLvl = doc['seniority_level_int'].size() > 0 ? doc['seniority_level_int'].value : params.jobLvl;
+                def candLvl = doc['seniority_level_int'].size() > 0 ? doc['seniority_level_int'].value : 2;
                 def jobLvl = params.jobLvl;
                 double seniorityFit = Math.max(0.5, 1.0 - 0.15 * Math.abs(candLvl - jobLvl));
                 double langLvl = doc['language_level_max'].size() > 0 ? doc['language_level_max'].value : 0.0;
                 double langScore = 1.0 + langLvl / 7.0;
 
-                double catScore = 1.0;
-                if (params.jobCategoryLabels != null && params.jobCategoryLabels.length > 0) {
-                    boolean hasMatch = false;
-                    for (int j = 0; j < params.jobCategoryLabels.length; j++) {
-                        String jc = params.jobCategoryLabels[j];
-                        for (int i = 0; i < doc['job_category_labels'].size(); i++) {
-                            if (doc['job_category_labels'][i].toString().equals(jc)) {
-                                hasMatch = true;
-                                break;
-                            }
-                        }
-                        if (hasMatch) break;
-                    }
-                    catScore = hasMatch ? 2.0 : 0.5;
-                }
-
                 return (params.wT * titleSim) + (params.wI * industrySim) + (params.wE * expScore)
                      + (params.wS * skillsSim) + (params.wSen * seniorityFit * 2.0)
-                     + (params.wEdu * eduSim) + (params.wLang * langScore) + (params.wCat * catScore);
+                     + (params.wEdu * eduSim) + (params.wLang * langScore);
             """,
             "params": {
                 "titleVec": title_vec,
@@ -189,9 +184,6 @@ def build_script_score(
                 "wSen": w_sen,
                 "wEdu": w_edu,
                 "wLang": w_lang,
-                "wCat": w_cat,
-                "jobCategoryLabels": job_cats,
             },
         }
     }
-
