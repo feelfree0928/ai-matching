@@ -3,10 +3,10 @@ Experience recency decay: compute recency_weight and weighted_years per role, ag
 """
 from __future__ import annotations
 
+import datetime
 from typing import Any
 
-CURRENT_YEAR = 2026
-
+CURRENT_YEAR: int = datetime.date.today().year
 
 RECENCY_FLOOR = 0.38
 
@@ -40,7 +40,7 @@ def apply_experience_scoring(candidate: dict[str, Any]) -> dict[str, Any]:
 
     for exp in experiences:
         end_year = int(exp.get("end_year", CURRENT_YEAR))
-        years_in_role = max(1, int(exp.get("years_in_role", 1)))
+        years_in_role = float(exp.get("years_in_role", 1) or 1)
         rw = recency_weight(end_year)
         weighted_years = years_in_role * rw
         exp["recency_weight"] = rw
@@ -53,23 +53,35 @@ def apply_experience_scoring(candidate: dict[str, Any]) -> dict[str, Any]:
     candidate["total_weighted_relevant_years"] = total_weighted
     candidate["aggregated_industry_parts"] = industry_parts
 
-    # Primary role = the single highest-weighted experience entry.
-    # Its title embedding is stored separately so Painless can compute a precise per-role
-    # title similarity rather than relying on the blended aggregated_title_embedding.
+    # Primary role: prefer an ongoing role (end_year == CURRENT_YEAR) so career changers
+    # who recently entered a new field are ranked by their current expertise, not an old
+    # long role that dominated weighted_years.
     best_exp = None
     best_w = -1.0
+    ongoing_exp = None
+    ongoing_w = -1.0
+
     for exp in experiences:
         w = float(exp.get("weighted_years", 0) or 0)
+        if int(exp.get("end_year", 0) or 0) >= CURRENT_YEAR:
+            if w > ongoing_w:
+                ongoing_w = w
+                ongoing_exp = exp
         if w > best_w:
             best_w = w
             best_exp = exp
 
+    # Use ongoing role as primary if it exists; fallback to highest weighted_years
+    chosen = ongoing_exp if ongoing_exp is not None else best_exp
+    chosen_w = ongoing_w if ongoing_exp is not None else best_w
+
+    # primary_role_title uses raw_title directly (no LLM standardization)
     candidate["primary_role_title"] = (
-        (best_exp.get("standardized_title") or best_exp.get("raw_title") or "").strip()
-        if best_exp else ""
+        (chosen.get("raw_title") or "").strip()
+        if chosen else ""
     )
-    candidate["primary_role_weighted_years"] = best_w if best_exp else 0.0
+    candidate["primary_role_weighted_years"] = chosen_w if chosen else 0.0
     # Secondary years = everything except the primary role
-    candidate["secondary_role_weighted_years"] = max(0.0, total_weighted - best_w)
+    candidate["secondary_role_weighted_years"] = max(0.0, total_weighted - chosen_w) if chosen else total_weighted
 
     return candidate

@@ -1,24 +1,76 @@
 """
-Title matching without re-embedding: LLM job-title normalization and LLM title-fit scoring.
-
-- Normalize job title at query time (e.g. "Nacht Rezeptionist/in (m/w/d)" -> "Nacht Rezeptionist")
-  so the title vector is comparable to candidate titles; does not depend on standardized_titles.txt.
-- Score each shortlisted candidate's title fit to the job title via one batch LLM call,
-  then blend into ranking so exact/semantic title matches (e.g. Night Receptionist) rank above
-  generic ones (e.g. Job Assistant) when the job is for night receptionist.
+Title matching utilities:
+- normalize_and_resolve_categories(): single LLM call that both normalizes the job title
+  and resolves matching category labels from the known WP taxonomy. Used at query time.
+- normalize_job_title_for_matching(): standalone title normalization (kept for direct use).
 """
 from __future__ import annotations
 
 import json
 import re
-from typing import TYPE_CHECKING
 
 from openai import OpenAI
 
-if TYPE_CHECKING:
-    from api.models import CandidateMatch
-
 MODEL = "gpt-4o-mini"
+
+
+def normalize_and_resolve_categories(
+    job_title: str,
+    known_category_labels: list[str],
+    client: OpenAI | None = None,
+) -> tuple[str, list[str]]:
+    """
+    Single LLM call: normalize job title AND resolve matching category labels.
+
+    Returns:
+        (normalized_title, matched_category_labels)
+        normalized_title: clean job title for embedding (same language, no m/w/d etc.)
+        matched_category_labels: subset of known_category_labels that best match this job.
+        On failure returns (raw job_title, []).
+    """
+    if not (job_title or "").strip():
+        return job_title, []
+
+    c = client or OpenAI()
+    cats_block = "\n".join(f"  - {lbl}" for lbl in (known_category_labels or [])[:300])
+
+    prompt = f"""You are processing a job posting title for a matching system.
+
+Job title: {job_title.strip()}
+
+Task 1 – Normalize the title:
+  Return a clean, short job title: same language as input, remove gender variants (/in, m/w/d, f/m/d),
+  remove extra punctuation, keep the core role name only.
+
+Task 2 – Match categories:
+  From the list below, select the labels that best describe this job's function.
+  Return 0–3 labels that clearly match. Return empty array if none fit well.
+
+Available category labels:
+{cats_block}
+
+Reply with JSON only (no markdown):
+{{"normalized_title": "...", "category_labels": ["label1", "label2"]}}"""
+
+    try:
+        resp = c.chat.completions.create(
+            model=MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=200,
+        )
+        text = (resp.choices[0].message.content or "").strip()
+        if text.startswith("```"):
+            text = re.sub(r"^```\w*\n?", "", text)
+            text = re.sub(r"\n?```\s*$", "", text)
+        data = json.loads(text)
+        normalized = str(data.get("normalized_title") or "").strip() or job_title
+        raw_labels = data.get("category_labels") or []
+        known_set = set(known_category_labels or [])
+        matched = [lbl for lbl in raw_labels if isinstance(lbl, str) and lbl in known_set]
+        return normalized, matched
+    except Exception:
+        return job_title, []
 
 
 def normalize_job_title_for_matching(job_title: str, client: OpenAI | None = None) -> str | None:
@@ -47,67 +99,3 @@ Job title: {job_title.strip()}"""
         return out if out else None
     except Exception:
         return None
-
-
-def score_title_fit_batch(
-    job_title: str,
-    matches: list["CandidateMatch"],
-    client: OpenAI | None = None,
-) -> dict[int, float]:
-    """
-    For each candidate, score 0-10 how well their main role title fits the job title.
-    Returns dict post_id -> score (0-10). Missing entries get 5.0 (neutral).
-    Does not depend on standardized_titles.txt; LLM understands e.g. Night Receptionist vs Job Assistant.
-    """
-    if not job_title or not matches:
-        return {}
-    c = client or OpenAI()
-    # Build compact candidate list: post_id, best role title(s), and job function categories
-    lines = []
-    for m in matches:
-        role = (m.most_relevant_role or "").strip()
-        if not role or role.upper() == "NONE":
-            roles = []
-            for e in (m.work_experiences or [])[:3]:
-                r = (e.standardized_title or e.raw_title or "").strip()
-                if r and r.upper() != "NONE":
-                    roles.append(r)
-            role = ", ".join(roles) if roles else "—"
-        cats = ", ".join((m.job_category_labels or [])[:3])
-        suffix = f" [Job function: {cats}]" if cats else ""
-        lines.append(f"  {m.post_id}: {role}{suffix}")
-    block = "\n".join(lines)
-
-    prompt = f"""Job title: {job_title.strip()}
-
-Candidates (post_id: main role title [Job function: category labels when available]):
-{block}
-
-Score each candidate 0-10 on how well their role title matches the job title. 10 = same or equivalent role (e.g. Night Receptionist for "Nacht Rezeptionist"), 0 = completely unrelated (e.g. Job Assistant for a night receptionist job). Use decimals if needed.
-Reply with a JSON object only: {{ "post_id": score, ... }}. One entry per post_id."""
-
-    try:
-        resp = c.chat.completions.create(
-            model=MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            max_tokens=1024,
-        )
-        text = (resp.choices[0].message.content or "").strip()
-        if text.startswith("```"):
-            text = re.sub(r"^```\w*\n?", "", text)
-            text = re.sub(r"\n?```\s*$", "", text)
-        data = json.loads(text)
-        if not isinstance(data, dict):
-            return {}
-        result = {}
-        for pid, val in data.items():
-            try:
-                pid_int = int(pid)
-                score = float(val) if val is not None else 5.0
-                result[pid_int] = max(0.0, min(10.0, score))
-            except (TypeError, ValueError):
-                continue
-        return result
-    except Exception:
-        return {}

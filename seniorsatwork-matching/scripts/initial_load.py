@@ -25,7 +25,6 @@ from etl.extractor import (
     fetch_job_categories_standalone,
     fetch_term_labels_standalone,
 )
-from etl.title_standardizer import apply_standardized_titles, load_standardized_titles
 from etl.transformer import transform_candidate, transform_job
 from embeddings.generator import add_embeddings_to_candidate
 from openai import OpenAI
@@ -65,11 +64,6 @@ def main() -> None:
                 limit = int(env_limit)
             except ValueError:
                 limit = None
-
-    titles_path = os.path.join(os.path.dirname(__file__), "..", "standardized_titles.txt")
-    standardized_titles = load_standardized_titles(titles_path)
-    if not standardized_titles:
-        print("Warning: no standardized titles found; title standardization will map to NONE.")
 
     if limit:
         print(f"TEST MODE: Processing only {limit} candidates (use without --limit for full load)")
@@ -122,7 +116,6 @@ def main() -> None:
                 try:
                     c = transform_candidate(raw, term_labels=term_labels)
                     apply_experience_scoring(c)
-                    apply_standardized_titles(c, standardized_titles, client=client)
                     add_embeddings_to_candidate(c, client)
                     if c.get("location", {}).get("lat") is None or c.get("location", {}).get("lon") is None:
                         skipped_no_location += 1

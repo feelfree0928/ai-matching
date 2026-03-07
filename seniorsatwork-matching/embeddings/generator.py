@@ -34,7 +34,7 @@ def _embed_batch(texts: list[str], client: OpenAI, cache_path: str) -> list[list
         resp = client.embeddings.create(model=EMBEDDING_MODEL, input=to_call)
         by_idx = {e.index: e.embedding for e in resp.data}
         for j, idx in enumerate(indices):
-            vec = by_idx.get(j, by_idx.get(len(to_call) - 1, [0.0] * DIMS))
+            vec = by_idx.get(j, [0.0] * DIMS)
             results[idx] = vec
             set_cached_embedding(to_call[j], vec, cache_path)
 
@@ -94,20 +94,15 @@ def add_embeddings_to_candidate(
     primary_role_title_embedding, skills_embedding, education_embedding on candidate.
     """
     experiences = candidate.get("work_experiences") or []
-    # Title: weighted by recency_weight * years_in_role (prefer standardized, fall back to raw)
+    # Title: weighted by recency_weight * years_in_role using raw_title directly.
+    # No standardization step: text-embedding-3-small handles German natively and
+    # standardization was causing NONE penalties for titles not in the canonical list.
     title_items = []
     for exp in experiences:
-        t = (exp.get("standardized_title") or exp.get("raw_title") or "").strip()
-        if t and t != "NONE":
+        t = (exp.get("raw_title") or "").strip()
+        if t:
             w = float(exp.get("recency_weight", 1.0)) * float(exp.get("years_in_role", 1))
             title_items.append((t, w))
-    # If all standardized titles were NONE, use raw_title so we still get an embedding
-    if not title_items and experiences:
-        for exp in experiences:
-            raw = (exp.get("raw_title") or "").strip()
-            if raw:
-                w = float(exp.get("recency_weight", 1.0)) * float(exp.get("years_in_role", 1))
-                title_items.append((raw, w))
     candidate["aggregated_title_embedding"] = weighted_mean_embedding(
         title_items, client, cache_path
     ) if title_items else None
@@ -163,11 +158,11 @@ def add_embeddings_to_candidate(
     else:
         candidate["education_embedding"] = None
 
-    if candidate.get("aggregated_industry_embedding") is None:
-        candidate["aggregated_industry_embedding"] = [0.0] * DIMS
-    if candidate.get("skills_embedding") is None:
-        candidate["skills_embedding"] = [0.0] * DIMS
-    if candidate.get("education_embedding") is None:
-        candidate["education_embedding"] = [0.0] * DIMS
+    # Do NOT pre-fill missing embeddings with zero vectors.
+    # The ES indexer converts zero vectors to a unit vector [1, 0, 0...], which means
+    # the size()==0 neutral guard in the Painless script never fires and cosine similarity
+    # is computed against an arbitrary axis — corrupting industry/skills/education scoring.
+    # Leaving as None means the field is omitted from the ES document, size()==0 returns true,
+    # and the Painless script correctly returns 1.0 (neutral) for candidates with no data.
 
     return candidate
