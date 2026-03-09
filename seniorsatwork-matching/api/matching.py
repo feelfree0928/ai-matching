@@ -203,17 +203,19 @@ def run_match(
             size=max_results,
         )
 
+    effective_cats = resolved_cats
     try:
         resp = _do_search(effective_min_score, resolved_cats)
         # Fallback 1: category filter returned no hits (index not yet rebuilt with categories)
         if not resp.get("hits", {}).get("hits") and resolved_cats:
+            effective_cats = []
             resp = _do_search(effective_min_score, cat_labels=[])
         # Fallback 2: progressively lower score threshold
         if not resp.get("hits", {}).get("hits"):
             for fallback in _FALLBACK_THRESHOLDS:
                 if fallback >= effective_min_score:
                     continue
-                resp = _do_search(fallback, cat_labels=[])
+                resp = _do_search(fallback, cat_labels=effective_cats)
                 if resp.get("hits", {}).get("hits"):
                     break
     except BadRequestError as e:
@@ -235,12 +237,14 @@ def run_match(
             matches=[],
             message=f"Search failed: {detail}",
             total_above_threshold=0,
+            applied_category_labels=[],
         )
     except Exception as e:
         return MatchResponse(
             matches=[],
             message=f"Search failed: {e}",
             total_above_threshold=0,
+            applied_category_labels=[],
         )
 
     hits = resp.get("hits", {}).get("hits", [])
@@ -442,4 +446,5 @@ def run_match(
         matches=matches,
         message=None if matches else "No qualified candidates found above threshold.",
         total_above_threshold=total_val,
+        applied_category_labels=effective_cats,
     )
