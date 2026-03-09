@@ -65,8 +65,16 @@ def build_hard_filters(
                 }
             })
     if job_category_labels:
+        # Filter strictly by category ID: only profiles with this ID in primary or secondary.
+        cat_ids = list(job_category_labels)
         filters.append({
-            "terms": {"job_category_labels": job_category_labels}
+            "bool": {
+                "should": [
+                    {"terms": {"job_categories_primary": cat_ids}},
+                    {"terms": {"job_categories_secondary": cat_ids}},
+                ],
+                "minimum_should_match": 1,
+            }
         })
     return filters
 
