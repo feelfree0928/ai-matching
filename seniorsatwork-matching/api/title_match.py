@@ -18,9 +18,12 @@ def normalize_and_resolve_categories(
     job_title: str,
     known_category_labels: list[str],
     client: OpenAI | None = None,
+    job_description: str | None = None,
 ) -> tuple[str, list[str]]:
     """
     Single LLM call: normalize job title AND resolve matching category labels.
+
+    Uses the full job posting (title + description when provided) for better category mapping.
 
     Returns:
         (normalized_title, matched_category_labels)
@@ -34,9 +37,13 @@ def normalize_and_resolve_categories(
     c = client or OpenAI()
     cats_block = "\n".join(f"  - {lbl}" for lbl in (known_category_labels or [])[:300])
 
-    prompt = f"""You are processing a job posting title for a matching system.
+    desc_block = ""
+    if job_description and (job_description or "").strip():
+        desc_block = f"\nJob description:\n{(job_description or '').strip()[:2000]}"
 
-Job title: {job_title.strip()}
+    prompt = f"""You are processing a job posting for a matching system. Use the full posting (title and description) to understand the role.
+
+Job title: {job_title.strip()}{desc_block}
 
 Task 1 – Normalize the title:
   Return a clean, short job title: same language as input, remove gender variants (/in, m/w/d, f/m/d),
@@ -44,6 +51,7 @@ Task 1 – Normalize the title:
 
 Task 2 – Match categories:
   From the list below, select the labels that best describe this job's function.
+  Use both the title and description to infer the correct categories (e.g. "real estate accountant" → Accounting).
   Return 0–3 labels that clearly match. Return empty array if none fit well.
 
 Available category labels:
