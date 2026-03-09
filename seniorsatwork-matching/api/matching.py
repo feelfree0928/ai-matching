@@ -66,7 +66,9 @@ def _job_embeddings(req: JobMatchRequest, client=None) -> tuple:
     else:
         # No categories — single LLM call handles both normalization and category resolution
         known_labels = get_known_category_labels()
-        normalized_title, resolved_categories = normalize_and_resolve_categories(raw_title, known_labels, c)
+        normalized_title, resolved_categories = normalize_and_resolve_categories(
+            raw_title, known_labels, c, job_description=req.description
+        )
         title_text = normalized_title if normalized_title else raw_title
 
     title_vec = embed_text(title_text, c)
