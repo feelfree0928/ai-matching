@@ -153,3 +153,7 @@ class MatchResponse(BaseModel):
     matches: list[CandidateMatch] = Field(default_factory=list)
     message: Optional[str] = None
     total_above_threshold: int = 0
+    applied_category_labels: list[str] = Field(
+        default_factory=list,
+        description="Category labels used for the hard filter (from LLM or user). Empty if no filter applied.",
+    )

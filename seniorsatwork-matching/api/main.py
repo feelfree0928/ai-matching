@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from api import config as app_config
+from api.category_cache import get_known_category_labels
 from api.matching import run_match
 from api.models import JobMatchRequest, LanguageRequirement, MatchResponse
 from es_layer.indexer import get_es_client
@@ -152,6 +153,12 @@ def get_health() -> dict[str, Any]:
     except Exception as e:
         out["database"] = f"error: {e}"
     return out
+
+
+@app.get("/api/categories")
+def get_categories() -> dict[str, list[str]]:
+    """Known job category labels from WordPress taxonomy (for filter dropdown)."""
+    return {"categories": get_known_category_labels()}
 
 
 @app.get("/api/config")
