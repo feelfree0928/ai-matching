@@ -157,7 +157,3 @@ class MatchResponse(BaseModel):
         default_factory=list,
         description="Category labels used for the hard filter (from LLM or user). Empty if no filter applied.",
     )
-    category_filter_fallback: bool = Field(
-        default=False,
-        description="True when category filter returned 0 results and we fell back to showing all candidates.",
-    )

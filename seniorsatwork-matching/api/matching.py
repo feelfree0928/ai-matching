@@ -24,7 +24,6 @@ from api.models import (
 from api.score_breakdown import compute_breakdown, has_breakdown_data
 from embeddings.generator import embed_text
 from api.title_match import normalize_and_resolve_categories, normalize_job_title_for_matching
-from api.category_cache import resolve_to_category_ids
 
 
 def _zero_vec():
@@ -180,7 +179,6 @@ def run_match(
     _FALLBACK_THRESHOLDS = [1.30, 1.15]
 
     def _build_filters(cat_labels: list[str] | None = None) -> list[dict]:
-        cat_ids = resolve_to_category_ids(cat_labels or []) if cat_labels else []
         return build_hard_filters(
             location_lat=req.location_lat,
             location_lon=req.location_lon,
@@ -189,7 +187,7 @@ def run_match(
             pensum_max=req.pensum_max,
             required_languages=[{"name": l.name, "min_level": l.min_level} for l in req.required_languages],
             required_available_before=req.required_available_before,
-            job_category_labels=cat_ids if cat_ids else None,
+            job_category_labels=cat_labels if cat_labels else None,
         )
 
     def _do_search(min_s: float, cat_labels: list[str] | None = None):
@@ -206,15 +204,9 @@ def run_match(
         )
 
     effective_cats = resolved_cats
-    category_filter_fallback = False
     try:
         resp = _do_search(effective_min_score, resolved_cats)
-        # Fallback 1: category filter returned no hits (index not yet rebuilt with categories)
-        if not resp.get("hits", {}).get("hits") and resolved_cats:
-            effective_cats = []
-            category_filter_fallback = True
-            resp = _do_search(effective_min_score, cat_labels=[])
-        # Fallback 2: progressively lower score threshold
+        # Fallback: progressively lower score threshold (keeps category filter)
         if not resp.get("hits", {}).get("hits"):
             for fallback in _FALLBACK_THRESHOLDS:
                 if fallback >= effective_min_score:
@@ -242,7 +234,6 @@ def run_match(
             message=f"Search failed: {detail}",
             total_above_threshold=0,
             applied_category_labels=[],
-            category_filter_fallback=False,
         )
     except Exception as e:
         return MatchResponse(
@@ -250,7 +241,6 @@ def run_match(
             message=f"Search failed: {e}",
             total_above_threshold=0,
             applied_category_labels=[],
-            category_filter_fallback=False,
         )
 
     hits = resp.get("hits", {}).get("hits", [])
@@ -453,5 +443,4 @@ def run_match(
         message=None if matches else "No qualified candidates found above threshold.",
         total_above_threshold=total_val,
         applied_category_labels=effective_cats,
-        category_filter_fallback=category_filter_fallback,
     )
