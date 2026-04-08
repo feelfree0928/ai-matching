@@ -154,13 +154,14 @@ def main() -> None:
     from etl.transformer import transform_candidate
     from etl.experience_scorer import apply_experience_scoring
     from embeddings.generator import add_embeddings_to_candidate
-    from es_layer.indexer import bulk_index_candidates, get_es_client
+    from es_layer.indexer import bulk_index_candidates, ensure_indices, get_es_client
     from openai import OpenAI
     from tqdm import tqdm
 
     term_labels = fetch_term_labels_standalone()
     client = OpenAI()
     es = get_es_client()
+    ensure_indices(es)
 
     processed = []
     for raw in tqdm(raw_list, desc="Transform + standardize + embed"):
@@ -177,10 +178,14 @@ def main() -> None:
     if processed:
         success, failed = bulk_index_candidates(es, processed, chunk_size=200)
         print(f"Indexed: {success} ok, {failed} failed.")
-
-    watermark = _watermark_str_from_rows(raw_list)
-    set_last_synced(watermark)
-    print(f"Updated last_synced_at to {watermark} (max post_modified from this batch).")
+        if success > 0:
+            watermark = _watermark_str_from_rows(raw_list)
+            set_last_synced(watermark)
+            print(f"Updated last_synced_at to {watermark} (max post_modified from this batch).")
+        else:
+            print("No candidates indexed successfully; watermark NOT advanced so they will be retried.")
+    else:
+        print("No candidates passed validation; watermark NOT advanced so they will be retried.")
 
 
 if __name__ == "__main__":

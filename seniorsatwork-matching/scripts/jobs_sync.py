@@ -150,7 +150,7 @@ def fetch_modified_jobs(since: str | None) -> list[dict]:
 def main() -> None:
     from etl.extractor import fetch_job_categories_standalone, fetch_term_labels_standalone
     from etl.transformer import transform_job
-    from es_layer.indexer import bulk_index_jobs, get_es_client
+    from es_layer.indexer import bulk_index_jobs, ensure_indices, get_es_client
 
     since = get_last_synced()
 
@@ -185,18 +185,19 @@ def main() -> None:
             print(f"Skip job post_id={rj.get('post_id')}: {e}")
 
     if not transformed:
-        print("No jobs could be transformed.")
-        wm = _watermark_str_from_rows(raw_jobs)
-        set_last_synced(wm)
-        print(f"Updated last_synced_at to {wm} (max post_modified from this batch).")
+        print("No jobs could be transformed; watermark NOT advanced so they will be retried.")
         return
 
     es = get_es_client()
+    ensure_indices(es)
     ok, failed = bulk_index_jobs(es, transformed)
     print(f"Jobs indexed: {ok} ok, {failed} failed.")
-    wm = _watermark_str_from_rows(raw_jobs)
-    set_last_synced(wm)
-    print(f"Updated last_synced_at to {wm} (max post_modified from this batch).")
+    if ok > 0:
+        wm = _watermark_str_from_rows(raw_jobs)
+        set_last_synced(wm)
+        print(f"Updated last_synced_at to {wm} (max post_modified from this batch).")
+    else:
+        print("No jobs indexed successfully; watermark NOT advanced so they will be retried.")
 
 
 if __name__ == "__main__":

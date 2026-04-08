@@ -120,3 +120,13 @@ def get_job(sync_id: str) -> dict[str, Any] | None:
         if rec is None:
             return None
         return dict(rec)
+
+
+def get_running(kind: SyncKind) -> dict[str, Any] | None:
+    """Return the first job of the given kind that is pending or running, or None."""
+    with _lock:
+        for sid in reversed(_order):
+            rec = _jobs.get(sid)
+            if rec and rec["kind"] == kind and rec["status"] in ("pending", "running"):
+                return dict(rec)
+    return None

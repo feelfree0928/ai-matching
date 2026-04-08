@@ -37,40 +37,50 @@ _STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
 def _run_sync_script_in_background(sync_id: str, kind: str, script_basename: str) -> None:
     """Run a sync script from scripts/; update sync_jobs store and log tails. Intended for BackgroundTasks."""
     sync_jobs_store.mark_running(sync_id)
-    root = os.path.join(os.path.dirname(__file__), "..")
+    root = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
     script = os.path.join(root, "scripts", script_basename)
+    proc = None
     try:
-        result = subprocess.run(
+        proc = subprocess.Popen(
             [sys.executable, script],
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=_SYNC_SUBPROCESS_TIMEOUT_S,
+            encoding="utf-8",
+            errors="replace",
             cwd=root,
         )
-        tail_out = (result.stdout or "")[-8000:]
-        tail_err = (result.stderr or "")[-4000:]
+        stdout, stderr = proc.communicate(timeout=_SYNC_SUBPROCESS_TIMEOUT_S)
+        tail_out = (stdout or "")[-8000:]
+        tail_err = (stderr or "")[-4000:]
         sync_jobs_store.finish_subprocess(
             sync_id,
-            exit_code=result.returncode,
+            exit_code=proc.returncode,
             stdout_tail=tail_out,
             stderr_tail=tail_err,
         )
-        if result.returncode == 0:
+        if proc.returncode == 0:
             logger.info("%s %s finished ok. stdout_tail=%r stderr_tail=%r", kind, script_basename, tail_out, tail_err)
         else:
             logger.warning(
                 "%s %s exited %s. stdout_tail=%r stderr_tail=%r",
                 kind,
                 script_basename,
-                result.returncode,
+                proc.returncode,
                 tail_out,
                 tail_err,
             )
     except subprocess.TimeoutExpired:
         logger.error("%s timed out after %ss", script_basename, _SYNC_SUBPROCESS_TIMEOUT_S)
+        if proc is not None:
+            proc.kill()
+            proc.wait()
         sync_jobs_store.finish_timeout(sync_id, _SYNC_SUBPROCESS_TIMEOUT_S)
     except Exception as e:
         logger.exception("%s failed", script_basename)
+        if proc is not None and proc.poll() is None:
+            proc.kill()
+            proc.wait()
         sync_jobs_store.finish_exception(sync_id, e)
 
 
@@ -139,6 +149,17 @@ def get_job_matches(post_id: int) -> MatchResponse:
 @app.post("/api/index/candidates/sync")
 def post_sync_candidates(background_tasks: BackgroundTasks) -> JSONResponse:
     """Start delta sync of candidates in the background (avoids proxy/router timeouts on long runs)."""
+    already = sync_jobs_store.get_running("candidates")
+    if already:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "ok": False,
+                "message": "Candidate sync already running.",
+                "sync_id": already["sync_id"],
+                "status_path": f"/api/index/sync/status/{already['sync_id']}",
+            },
+        )
     sync_id = sync_jobs_store.create_job("candidates", "incremental_sync.py")
     status_path = f"/api/index/sync/status/{sync_id}"
     background_tasks.add_task(
@@ -166,6 +187,17 @@ def post_sync_candidates(background_tasks: BackgroundTasks) -> JSONResponse:
 @app.post("/api/index/jobs/sync")
 def post_sync_jobs(background_tasks: BackgroundTasks) -> JSONResponse:
     """Start job postings sync in the background (avoids proxy/router timeouts on long runs)."""
+    already = sync_jobs_store.get_running("jobs")
+    if already:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "ok": False,
+                "message": "Job sync already running.",
+                "sync_id": already["sync_id"],
+                "status_path": f"/api/index/sync/status/{already['sync_id']}",
+            },
+        )
     sync_id = sync_jobs_store.create_job("jobs", "jobs_sync.py")
     status_path = f"/api/index/sync/status/{sync_id}"
     background_tasks.add_task(
