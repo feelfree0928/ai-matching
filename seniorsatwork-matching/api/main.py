@@ -15,6 +15,7 @@ from elasticsearch.exceptions import NotFoundError
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -23,15 +24,19 @@ from api import config as app_config
 from api.category_cache import get_known_category_labels
 from api.matching import run_match
 from api.models import JobMatchRequest, LanguageRequirement, MatchResponse
+from api import sync_jobs as sync_jobs_store
 from es_layer.indexer import get_es_client
 from es_layer.mappings import JOBS_INDEX
 
 # Long-running; subprocess timeout (seconds). API returns 202 immediately so proxies do not wait.
 _SYNC_SUBPROCESS_TIMEOUT_S = int(os.getenv("SYNC_SUBPROCESS_TIMEOUT_S", "7200"))
 
+_STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
 
-def _run_sync_script_in_background(script_basename: str) -> None:
-    """Run a sync script from scripts/; log stdout/stderr tail. Intended for BackgroundTasks."""
+
+def _run_sync_script_in_background(sync_id: str, kind: str, script_basename: str) -> None:
+    """Run a sync script from scripts/; update sync_jobs store and log tails. Intended for BackgroundTasks."""
+    sync_jobs_store.mark_running(sync_id)
     root = os.path.join(os.path.dirname(__file__), "..")
     script = os.path.join(root, "scripts", script_basename)
     try:
@@ -44,11 +49,18 @@ def _run_sync_script_in_background(script_basename: str) -> None:
         )
         tail_out = (result.stdout or "")[-8000:]
         tail_err = (result.stderr or "")[-4000:]
+        sync_jobs_store.finish_subprocess(
+            sync_id,
+            exit_code=result.returncode,
+            stdout_tail=tail_out,
+            stderr_tail=tail_err,
+        )
         if result.returncode == 0:
-            logger.info("%s finished ok. stdout_tail=%r stderr_tail=%r", script_basename, tail_out, tail_err)
+            logger.info("%s %s finished ok. stdout_tail=%r stderr_tail=%r", kind, script_basename, tail_out, tail_err)
         else:
             logger.warning(
-                "%s exited %s. stdout_tail=%r stderr_tail=%r",
+                "%s %s exited %s. stdout_tail=%r stderr_tail=%r",
+                kind,
                 script_basename,
                 result.returncode,
                 tail_out,
@@ -56,8 +68,10 @@ def _run_sync_script_in_background(script_basename: str) -> None:
             )
     except subprocess.TimeoutExpired:
         logger.error("%s timed out after %ss", script_basename, _SYNC_SUBPROCESS_TIMEOUT_S)
-    except Exception:
+        sync_jobs_store.finish_timeout(sync_id, _SYNC_SUBPROCESS_TIMEOUT_S)
+    except Exception as e:
         logger.exception("%s failed", script_basename)
+        sync_jobs_store.finish_exception(sync_id, e)
 
 
 @asynccontextmanager
@@ -125,16 +139,25 @@ def get_job_matches(post_id: int) -> MatchResponse:
 @app.post("/api/index/candidates/sync")
 def post_sync_candidates(background_tasks: BackgroundTasks) -> JSONResponse:
     """Start delta sync of candidates in the background (avoids proxy/router timeouts on long runs)."""
-    background_tasks.add_task(_run_sync_script_in_background, "incremental_sync.py")
+    sync_id = sync_jobs_store.create_job("candidates", "incremental_sync.py")
+    status_path = f"/api/index/sync/status/{sync_id}"
+    background_tasks.add_task(
+        _run_sync_script_in_background,
+        sync_id,
+        "candidates",
+        "incremental_sync.py",
+    )
     return JSONResponse(
         status_code=202,
         content={
             "ok": True,
             "accepted": True,
+            "sync_id": sync_id,
+            "status_path": status_path,
             "message": (
                 "Candidate sync started in the background. "
-                "This can take many minutes; check server logs for completion and any errors. "
-                "If you saw ROUTER_EXTERNAL_TARGET_ERROR before, it was likely a ~120s proxy limit—this 202 response returns immediately."
+                "Poll GET /api/index/sync/status/{sync_id} or open /static/sync.html. "
+                "HTTP 202 returns immediately (avoids proxy timeouts)."
             ),
         },
     )
@@ -143,18 +166,36 @@ def post_sync_candidates(background_tasks: BackgroundTasks) -> JSONResponse:
 @app.post("/api/index/jobs/sync")
 def post_sync_jobs(background_tasks: BackgroundTasks) -> JSONResponse:
     """Start job postings sync in the background (avoids proxy/router timeouts on long runs)."""
-    background_tasks.add_task(_run_sync_script_in_background, "jobs_sync.py")
+    sync_id = sync_jobs_store.create_job("jobs", "jobs_sync.py")
+    status_path = f"/api/index/sync/status/{sync_id}"
+    background_tasks.add_task(
+        _run_sync_script_in_background,
+        sync_id,
+        "jobs",
+        "jobs_sync.py",
+    )
     return JSONResponse(
         status_code=202,
         content={
             "ok": True,
             "accepted": True,
+            "sync_id": sync_id,
+            "status_path": status_path,
             "message": (
                 "Job sync started in the background. "
-                "Check server logs for completion. Response returns immediately (HTTP 202)."
+                "Poll GET /api/index/sync/status/{sync_id} or open /static/sync.html."
             ),
         },
     )
+
+
+@app.get("/api/index/sync/status/{sync_id}")
+def get_sync_status(sync_id: str) -> dict[str, Any]:
+    """Poll background sync job status (stdout/stderr tails when finished)."""
+    rec = sync_jobs_store.get_job(sync_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail="Unknown or expired sync_id")
+    return rec
 
 
 @app.get("/api/health")
@@ -223,4 +264,12 @@ def patch_config(updates: ConfigUpdate) -> dict[str, Any]:
 
 @app.get("/")
 def root() -> dict[str, str]:
-    return {"service": "Job Matching API", "docs": "/docs"}
+    return {
+        "service": "Job Matching API",
+        "docs": "/docs",
+        "sync_ui": "/static/sync.html",
+    }
+
+
+if os.path.isdir(_STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
