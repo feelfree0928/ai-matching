@@ -13,6 +13,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from dotenv import load_dotenv
 
+from etl.extractor import POST_TYPE_JOB
+
 load_dotenv()
 
 JOB_SYNC_STATE_PATH = os.getenv(
@@ -38,6 +40,39 @@ def set_last_synced(ts: str) -> None:
         json.dump({"last_synced_at": ts}, f, indent=2)
 
 
+def _watermark_str_from_rows(rows: list[dict]) -> str:
+    """
+    Use max(post_modified) from fetched rows so the cursor does not jump past DB timestamps.
+    """
+    best: datetime | None = None
+    for r in rows:
+        pm = r.get("post_modified")
+        if pm is None:
+            continue
+        if isinstance(pm, datetime):
+            cand = pm
+        elif isinstance(pm, str):
+            s = pm.strip().replace("Z", " ").replace("T", " ")
+            cand = None
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"):
+                try:
+                    cand = datetime.strptime(s[:26], fmt)
+                    break
+                except ValueError:
+                    continue
+            if cand is None:
+                continue
+        else:
+            continue
+        if best is None or cand > best:
+            best = cand
+    if best is None:
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    if best.tzinfo is not None:
+        best = best.astimezone(timezone.utc).replace(tzinfo=None)
+    return best.strftime("%Y-%m-%d %H:%M:%S")
+
+
 def fetch_modified_jobs(since: str | None) -> list[dict]:
     """Fetch job postings with post_modified > since. If since is None, fetch all."""
     import pymysql
@@ -58,20 +93,21 @@ def fetch_modified_jobs(since: str | None) -> list[dict]:
                     """
                     SELECT ID AS post_id, post_title, post_content, post_excerpt, post_modified
                     FROM wp_posts
-                    WHERE post_type = 'noo_job' AND post_status = 'publish'
+                    WHERE post_type = %s AND post_status = 'publish'
                     AND post_modified > %s
                     ORDER BY ID
                     """,
-                    (since,),
+                    (POST_TYPE_JOB, since),
                 )
             else:
                 cur.execute(
                     """
                     SELECT ID AS post_id, post_title, post_content, post_excerpt, post_modified
                     FROM wp_posts
-                    WHERE post_type = 'noo_job' AND post_status = 'publish'
+                    WHERE post_type = %s AND post_status = 'publish'
                     ORDER BY ID
-                    """
+                    """,
+                    (POST_TYPE_JOB,),
                 )
             rows = cur.fetchall()
 
@@ -117,7 +153,6 @@ def main() -> None:
     from es_layer.indexer import bulk_index_jobs, get_es_client
 
     since = get_last_synced()
-    sync_start = datetime.now(timezone.utc).isoformat()
 
     if since:
         print(f"Job sync: incremental since {since}")
@@ -129,7 +164,10 @@ def main() -> None:
 
     if not raw_jobs:
         print("Nothing to sync.")
-        set_last_synced(sync_start)
+        # Advance cursor so the next run does not re-scan all history; use wall-clock when no rows.
+        no_change_watermark = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        set_last_synced(no_change_watermark)
+        print(f"Updated last_synced_at to {no_change_watermark}.")
         return
 
     post_ids = [r["post_id"] for r in raw_jobs]
@@ -148,13 +186,17 @@ def main() -> None:
 
     if not transformed:
         print("No jobs could be transformed.")
-        set_last_synced(sync_start)
+        wm = _watermark_str_from_rows(raw_jobs)
+        set_last_synced(wm)
+        print(f"Updated last_synced_at to {wm} (max post_modified from this batch).")
         return
 
     es = get_es_client()
     ok, failed = bulk_index_jobs(es, transformed)
     print(f"Jobs indexed: {ok} ok, {failed} failed.")
-    set_last_synced(sync_start)
+    wm = _watermark_str_from_rows(raw_jobs)
+    set_last_synced(wm)
+    print(f"Updated last_synced_at to {wm} (max post_modified from this batch).")
 
 
 if __name__ == "__main__":
