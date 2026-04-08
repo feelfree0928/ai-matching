@@ -12,9 +12,45 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from dotenv import load_dotenv
 
+from etl.extractor import POST_TYPE_RESUME, RESUME_META_KEYS
+
 load_dotenv()
 
 SYNC_STATE_PATH = os.getenv("SYNC_STATE_PATH", os.path.join(os.path.dirname(__file__), "..", "sync_state.json"))
+
+
+def _watermark_str_from_rows(rows: list[dict]) -> str:
+    """
+    Use max(post_modified) from fetched rows so the cursor does not jump past DB timestamps
+    (avoids missing rows when wall-clock 'now' is ahead of post_modified).
+    """
+    best: datetime | None = None
+    for r in rows:
+        pm = r.get("post_modified")
+        if pm is None:
+            continue
+        if isinstance(pm, datetime):
+            cand = pm
+        elif isinstance(pm, str):
+            s = pm.strip().replace("Z", " ").replace("T", " ")
+            cand = None
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"):
+                try:
+                    cand = datetime.strptime(s[:26], fmt)
+                    break
+                except ValueError:
+                    continue
+            if cand is None:
+                continue
+        else:
+            continue
+        if best is None or cand > best:
+            best = cand
+    if best is None:
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    if best.tzinfo is not None:
+        best = best.astimezone(timezone.utc).replace(tzinfo=None)
+    return best.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def get_last_synced() -> str | None:
@@ -53,26 +89,26 @@ def fetch_modified_candidates(since: str | None) -> list[dict]:
                     """
                     SELECT p.ID AS post_id, p.post_content, p.post_excerpt, p.post_modified
                     FROM wp_posts p
-                    WHERE p.post_type = 'resume' AND p.post_status = 'publish'
+                    WHERE p.post_type = %s AND p.post_status = 'publish'
                     AND p.post_modified > %s
                     ORDER BY p.ID
                     """,
-                    (since,),
+                    (POST_TYPE_RESUME, since),
                 )
             else:
                 cur.execute(
                     """
                     SELECT p.ID AS post_id, p.post_content, p.post_excerpt, p.post_modified
                     FROM wp_posts p
-                    WHERE p.post_type = 'resume' AND p.post_status = 'publish'
+                    WHERE p.post_type = %s AND p.post_status = 'publish'
                     ORDER BY p.ID
-                    """
+                    """,
+                    (POST_TYPE_RESUME,),
                 )
             rows = cur.fetchall()
         if not rows:
             return []
         post_ids = [r["post_id"] for r in rows]
-        from etl.extractor import RESUME_META_KEYS
         placeholders = ", ".join("%s" for _ in post_ids)
         meta_placeholders = ", ".join("%s" for _ in RESUME_META_KEYS)
         with conn.cursor() as cur:
@@ -142,9 +178,9 @@ def main() -> None:
         success, failed = bulk_index_candidates(es, processed, chunk_size=200)
         print(f"Indexed: {success} ok, {failed} failed.")
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    set_last_synced(now)
-    print(f"Updated last_synced_at to {now}.")
+    watermark = _watermark_str_from_rows(raw_list)
+    set_last_synced(watermark)
+    print(f"Updated last_synced_at to {watermark} (max post_modified from this batch).")
 
 
 if __name__ == "__main__":
