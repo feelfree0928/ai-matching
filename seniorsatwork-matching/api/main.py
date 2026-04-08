@@ -3,14 +3,21 @@ FastAPI matching service: match, config, health, sync endpoints.
 """
 from __future__ import annotations
 
+import logging
+import os
+import subprocess
+import sys
 from contextlib import asynccontextmanager
 from typing import Any
 
 from elasticsearch.exceptions import NotFoundError
 
-from fastapi import FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 from api import config as app_config
 from api.category_cache import get_known_category_labels
@@ -18,6 +25,39 @@ from api.matching import run_match
 from api.models import JobMatchRequest, LanguageRequirement, MatchResponse
 from es_layer.indexer import get_es_client
 from es_layer.mappings import JOBS_INDEX
+
+# Long-running; subprocess timeout (seconds). API returns 202 immediately so proxies do not wait.
+_SYNC_SUBPROCESS_TIMEOUT_S = int(os.getenv("SYNC_SUBPROCESS_TIMEOUT_S", "7200"))
+
+
+def _run_sync_script_in_background(script_basename: str) -> None:
+    """Run a sync script from scripts/; log stdout/stderr tail. Intended for BackgroundTasks."""
+    root = os.path.join(os.path.dirname(__file__), "..")
+    script = os.path.join(root, "scripts", script_basename)
+    try:
+        result = subprocess.run(
+            [sys.executable, script],
+            capture_output=True,
+            text=True,
+            timeout=_SYNC_SUBPROCESS_TIMEOUT_S,
+            cwd=root,
+        )
+        tail_out = (result.stdout or "")[-8000:]
+        tail_err = (result.stderr or "")[-4000:]
+        if result.returncode == 0:
+            logger.info("%s finished ok. stdout_tail=%r stderr_tail=%r", script_basename, tail_out, tail_err)
+        else:
+            logger.warning(
+                "%s exited %s. stdout_tail=%r stderr_tail=%r",
+                script_basename,
+                result.returncode,
+                tail_out,
+                tail_err,
+            )
+    except subprocess.TimeoutExpired:
+        logger.error("%s timed out after %ss", script_basename, _SYNC_SUBPROCESS_TIMEOUT_S)
+    except Exception:
+        logger.exception("%s failed", script_basename)
 
 
 @asynccontextmanager
@@ -83,55 +123,38 @@ def get_job_matches(post_id: int) -> MatchResponse:
 
 
 @app.post("/api/index/candidates/sync")
-def post_sync_candidates() -> dict[str, Any]:
-    """Trigger delta sync of candidates from WordPress."""
-    import subprocess
-    import sys
-    import os
-    script = os.path.join(os.path.dirname(__file__), "..", "scripts", "incremental_sync.py")
-    try:
-        result = subprocess.run(
-            [sys.executable, script],
-            capture_output=True,
-            text=True,
-            timeout=600,
-            cwd=os.path.join(os.path.dirname(__file__), ".."),
-        )
-        return {
-            "ok": result.returncode == 0,
-            "stdout": result.stdout or "",
-            "stderr": result.stderr or "",
-        }
-    except subprocess.TimeoutExpired:
-        return {"ok": False, "stdout": "", "stderr": "Sync timed out after 600s"}
-    except Exception as e:
-        return {"ok": False, "stdout": "", "stderr": str(e)}
+def post_sync_candidates(background_tasks: BackgroundTasks) -> JSONResponse:
+    """Start delta sync of candidates in the background (avoids proxy/router timeouts on long runs)."""
+    background_tasks.add_task(_run_sync_script_in_background, "incremental_sync.py")
+    return JSONResponse(
+        status_code=202,
+        content={
+            "ok": True,
+            "accepted": True,
+            "message": (
+                "Candidate sync started in the background. "
+                "This can take many minutes; check server logs for completion and any errors. "
+                "If you saw ROUTER_EXTERNAL_TARGET_ERROR before, it was likely a ~120s proxy limit—this 202 response returns immediately."
+            ),
+        },
+    )
 
 
 @app.post("/api/index/jobs/sync")
-def post_sync_jobs() -> dict[str, Any]:
-    """Trigger delta sync of job postings from WordPress."""
-    import subprocess
-    import sys
-    import os
-    script = os.path.join(os.path.dirname(__file__), "..", "scripts", "jobs_sync.py")
-    try:
-        result = subprocess.run(
-            [sys.executable, script],
-            capture_output=True,
-            text=True,
-            timeout=300,
-            cwd=os.path.join(os.path.dirname(__file__), ".."),
-        )
-        return {
-            "ok": result.returncode == 0,
-            "stdout": result.stdout or "",
-            "stderr": result.stderr or "",
-        }
-    except subprocess.TimeoutExpired:
-        return {"ok": False, "stdout": "", "stderr": "Sync timed out after 300s"}
-    except Exception as e:
-        return {"ok": False, "stdout": "", "stderr": str(e)}
+def post_sync_jobs(background_tasks: BackgroundTasks) -> JSONResponse:
+    """Start job postings sync in the background (avoids proxy/router timeouts on long runs)."""
+    background_tasks.add_task(_run_sync_script_in_background, "jobs_sync.py")
+    return JSONResponse(
+        status_code=202,
+        content={
+            "ok": True,
+            "accepted": True,
+            "message": (
+                "Job sync started in the background. "
+                "Check server logs for completion. Response returns immediately (HTTP 202)."
+            ),
+        },
+    )
 
 
 @app.get("/api/health")
