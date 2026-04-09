@@ -36,7 +36,18 @@ def main() -> None:
     else:
         print("(data/title_mappings.db not found, skipping)")
 
-    # 3. Elasticsearch candidates and job_postings indices (use get to avoid HEAD 400 on ES 8.x)
+    # 3. Sync state watermark files
+    for sync_file in ("sync_state.json", "job_sync_state.json"):
+        path = os.path.join(data_dir, sync_file)
+        if os.path.exists(path):
+            os.remove(path)
+            removed.append(f"data/{sync_file}")
+        old_path = os.path.join(project_root, sync_file)
+        if os.path.exists(old_path):
+            os.remove(old_path)
+            removed.append(sync_file)
+
+    # 4. Elasticsearch candidates and job_postings indices (use get to avoid HEAD 400 on ES 8.x)
     try:
         from elasticsearch.exceptions import NotFoundError
 

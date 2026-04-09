@@ -76,6 +76,52 @@ def ensure_indices(es: Elasticsearch) -> None:
             es.indices.create(index=index_name, mappings=mapping)
 
 
+def get_max_post_modified(es: Elasticsearch, index: str) -> str | None:
+    """Return the maximum post_modified value from an ES index, or None if the index is empty.
+
+    Used to recover the sync watermark when the on-disk state file is lost
+    (e.g. after a container restart without a persistent volume).
+    """
+    try:
+        result = es.search(
+            index=index,
+            size=0,
+            aggs={"max_pm": {"max": {"field": "post_modified"}}},
+        )
+        agg = result.get("aggregations", {}).get("max_pm", {})
+        val_str = agg.get("value_as_string")
+        if val_str:
+            return val_str.replace("T", " ")[:19]
+        return None
+    except (NotFoundError, Exception):
+        return None
+
+
+def bulk_delete_by_ids(
+    es: Elasticsearch,
+    index: str,
+    doc_ids: list[str],
+) -> tuple[int, int]:
+    """Delete documents by _id from an ES index. Returns (deleted_count, error_count)."""
+    if not doc_ids:
+        return 0, 0
+
+    def gen() -> Iterator[dict]:
+        for doc_id in doc_ids:
+            yield {"_op_type": "delete", "_index": index, "_id": doc_id}
+
+    deleted = 0
+    errors = 0
+    for ok, item in helpers.streaming_bulk(
+        es, gen(), chunk_size=500, raise_on_error=False, raise_on_exception=False,
+    ):
+        if ok:
+            deleted += 1
+        else:
+            errors += 1
+    return deleted, errors
+
+
 def _sanitize_post_modified(val: Any) -> str | None:
     """Return ES-parseable date string or None. WordPress uses 0000-00-00 00:00:00 for invalid dates."""
     if val is None:
