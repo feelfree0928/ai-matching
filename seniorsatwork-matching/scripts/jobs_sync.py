@@ -253,8 +253,13 @@ def main() -> None:
         stale_ids = fetch_recently_unpublished(conn, original_watermark)
         if stale_ids:
             str_ids = [str(sid) for sid in stale_ids]
-            deleted, del_err = bulk_delete_by_ids(es, JOBS_INDEX, str_ids)
-            print(f"Removed {deleted} stale jobs from ES ({del_err} errors).")
+            deleted, absent, del_err = bulk_delete_by_ids(es, JOBS_INDEX, str_ids)
+            print(
+                f"Stale unpublished posts: removed {deleted} from ES, "
+                f"{absent} were already absent (never indexed or already deleted)"
+                + (f", {del_err} delete error(s)" if del_err else "")
+                + ".",
+            )
         else:
             print("No stale jobs to remove.")
     finally:
