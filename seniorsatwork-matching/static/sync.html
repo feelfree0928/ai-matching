@@ -5,115 +5,232 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Index sync status</title>
   <style>
-    :root { font-family: system-ui, sans-serif; background: #0f1419; color: #e6edf3; }
-    body { max-width: 56rem; margin: 2rem auto; padding: 0 1rem; }
-    h1 { font-size: 1.25rem; font-weight: 600; }
-    p { color: #8b949e; font-size: 0.9rem; }
-    .row { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 1rem 0; }
+    :root { font-family: system-ui, -apple-system, sans-serif; background: #0f1419; color: #e6edf3; }
+    body { max-width: 60rem; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.3rem; font-weight: 600; margin-bottom: 0.25rem; }
+    .subtitle { color: #8b949e; font-size: 0.85rem; margin-bottom: 1.5rem; }
+
+    .actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.5rem; }
     button {
-      background: #238636; color: #fff; border: none; padding: 0.5rem 1rem;
-      border-radius: 6px; cursor: pointer; font-size: 0.9rem;
+      background: #238636; color: #fff; border: none; padding: 0.55rem 1.2rem;
+      border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 500;
+      transition: opacity 0.15s;
     }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button:hover:not(:disabled) { opacity: 0.85; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
     button.secondary { background: #21262d; color: #e6edf3; border: 1px solid #30363d; }
-    pre {
-      background: #161b22; border: 1px solid #30363d; border-radius: 6px;
-      padding: 1rem; overflow: auto; font-size: 0.75rem; line-height: 1.4; white-space: pre-wrap;
+
+    .card {
+      background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+      padding: 1rem 1.25rem; margin-bottom: 1rem;
     }
-    .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.8rem; }
+    .card h2 { font-size: 0.85rem; font-weight: 600; margin: 0 0 0.6rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.04em; }
+
+    .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 0.5rem 1.5rem; }
+    .meta-item label { display: block; font-size: 0.7rem; color: #6e7681; text-transform: uppercase; letter-spacing: 0.05em; }
+    .meta-item span { font-size: 0.85rem; font-family: 'SFMono-Regular', Consolas, monospace; }
+
+    .badge { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 4px; font-size: 0.8rem; font-weight: 500; }
+    .idle { background: #30363d; }
+    .starting { background: #6e40c9; }
     .pending { background: #30363d; }
-    .running { background: #1f6feb; }
+    .running { background: #1f6feb; animation: pulse 2s ease-in-out infinite; }
     .completed { background: #238636; }
     .failed, .timeout { background: #da3633; }
-    label { font-size: 0.85rem; color: #8b949e; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
+
+    .log-section { margin-top: 0.75rem; }
+    .log-section h2 { margin-bottom: 0.4rem; }
+    pre {
+      background: #0d1117; border: 1px solid #21262d; border-radius: 6px;
+      padding: 0.75rem 1rem; overflow: auto; font-size: 0.75rem; line-height: 1.5;
+      white-space: pre-wrap; max-height: 24rem; color: #c9d1d9;
+    }
+    pre:empty::after { content: '—'; color: #484f58; }
+
+    .timer { font-family: 'SFMono-Regular', Consolas, monospace; font-size: 0.85rem; color: #58a6ff; }
   </style>
 </head>
 <body>
   <h1>Elasticsearch index sync</h1>
-  <p>Starts a background sync and polls until it finishes. Same origin as the API (<code>/api/...</code>).</p>
+  <p class="subtitle">Smart incremental sync — only processes records modified since the last run. Batched with crash-safe watermark.</p>
 
-  <div class="row">
-    <button type="button" id="btn-candidates">Start candidates sync</button>
-    <button type="button" id="btn-jobs" class="secondary">Start jobs sync</button>
+  <div class="actions">
+    <button type="button" id="btn-candidates">Sync candidates</button>
+    <button type="button" id="btn-jobs" class="secondary">Sync jobs</button>
   </div>
 
-  <div id="current">
-    <p><label>sync_id</label> <code id="sync-id">—</code></p>
-    <p><label>status</label> <span id="status" class="badge pending">idle</span></p>
-    <p id="meta"></p>
-    <h2 style="font-size:1rem;margin-top:1.5rem;">stdout (tail)</h2>
-    <pre id="out">—</pre>
-    <h2 style="font-size:1rem;margin-top:1rem;">stderr (tail)</h2>
-    <pre id="err">—</pre>
+  <div class="card">
+    <h2>Status</h2>
+    <div class="meta-grid">
+      <div class="meta-item">
+        <label>Sync ID</label>
+        <span id="sync-id">--</span>
+      </div>
+      <div class="meta-item">
+        <label>Status</label>
+        <span id="status" class="badge idle">idle</span>
+      </div>
+      <div class="meta-item">
+        <label>Elapsed</label>
+        <span id="elapsed" class="timer">--</span>
+      </div>
+      <div class="meta-item">
+        <label>Exit code</label>
+        <span id="exit-code">--</span>
+      </div>
+    </div>
+    <div class="meta-grid" style="margin-top: 0.5rem;">
+      <div class="meta-item">
+        <label>Started</label>
+        <span id="started-at">--</span>
+      </div>
+      <div class="meta-item">
+        <label>Finished</label>
+        <span id="finished-at">--</span>
+      </div>
+    </div>
+    <p id="error-msg" style="color: #f85149; font-size: 0.85rem; margin: 0.5rem 0 0; display: none;"></p>
+  </div>
+
+  <div class="card log-section">
+    <h2>Output</h2>
+    <pre id="out"></pre>
+  </div>
+
+  <div class="card log-section">
+    <h2>Errors</h2>
+    <pre id="err"></pre>
   </div>
 
   <script>
     const POLL_MS = 2000;
     let pollTimer = null;
+    let elapsedTimer = null;
+    let startedAt = null;
+
+    function $(id) { return document.getElementById(id); }
 
     function setBadge(el, status) {
-      el.className = 'badge ' + (status || 'pending');
-      el.textContent = status || '—';
+      el.className = 'badge ' + (status || 'idle');
+      el.textContent = status || 'idle';
     }
 
-    function terminalStatus(s) {
+    function isTerminal(s) {
       return s === 'completed' || s === 'failed' || s === 'timeout';
     }
 
-    async function pollStatus(syncId) {
-      const r = await fetch('/api/index/sync/status/' + encodeURIComponent(syncId));
-      if (!r.ok) {
-        document.getElementById('meta').textContent = 'GET status failed: ' + r.status;
-        return;
-      }
-      const j = await r.json();
-      setBadge(document.getElementById('status'), j.status);
-      document.getElementById('sync-id').textContent = j.sync_id;
-      let meta = [];
-      if (j.started_at) meta.push('started_at: ' + j.started_at);
-      if (j.finished_at) meta.push('finished_at: ' + j.finished_at);
-      if (j.exit_code !== null && j.exit_code !== undefined) meta.push('exit_code: ' + j.exit_code);
-      if (j.ok !== null && j.ok !== undefined) meta.push('ok: ' + j.ok);
-      if (j.error) meta.push('error: ' + j.error);
-      document.getElementById('meta').textContent = meta.join(' · ');
-      document.getElementById('out').textContent = j.stdout_tail != null ? j.stdout_tail : '—';
-      document.getElementById('err').textContent = j.stderr_tail != null ? j.stderr_tail : (j.error || '—');
+    function fmtElapsed(ms) {
+      const s = Math.floor(ms / 1000);
+      const m = Math.floor(s / 60);
+      const h = Math.floor(m / 60);
+      if (h > 0) return h + 'h ' + (m % 60) + 'm ' + (s % 60) + 's';
+      if (m > 0) return m + 'm ' + (s % 60) + 's';
+      return s + 's';
+    }
 
-      if (terminalStatus(j.status) && pollTimer) {
-        clearInterval(pollTimer);
-        pollTimer = null;
-        document.getElementById('btn-candidates').disabled = false;
-        document.getElementById('btn-jobs').disabled = false;
+    function startElapsedTimer() {
+      startedAt = Date.now();
+      if (elapsedTimer) clearInterval(elapsedTimer);
+      elapsedTimer = setInterval(() => {
+        $('elapsed').textContent = fmtElapsed(Date.now() - startedAt);
+      }, 500);
+    }
+
+    function stopElapsedTimer() {
+      if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+    }
+
+    function autoScroll(el) {
+      el.scrollTop = el.scrollHeight;
+    }
+
+    async function pollStatus(syncId) {
+      try {
+        const r = await fetch('/api/index/sync/status/' + encodeURIComponent(syncId));
+        if (!r.ok) {
+          $('error-msg').textContent = 'Polling failed: HTTP ' + r.status;
+          $('error-msg').style.display = 'block';
+          return;
+        }
+        const j = await r.json();
+
+        setBadge($('status'), j.status);
+        $('sync-id').textContent = j.sync_id || '--';
+        $('started-at').textContent = j.started_at ? j.started_at.replace('T', ' ').slice(0, 19) : '--';
+        $('finished-at').textContent = j.finished_at ? j.finished_at.replace('T', ' ').slice(0, 19) : '--';
+        $('exit-code').textContent = j.exit_code != null ? j.exit_code : '--';
+
+        if (j.error) {
+          $('error-msg').textContent = j.error;
+          $('error-msg').style.display = 'block';
+        } else {
+          $('error-msg').style.display = 'none';
+        }
+
+        const outEl = $('out');
+        const errEl = $('err');
+        outEl.textContent = j.stdout_tail || '';
+        errEl.textContent = j.stderr_tail || (j.error || '');
+        autoScroll(outEl);
+        autoScroll(errEl);
+
+        if (isTerminal(j.status)) {
+          if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+          stopElapsedTimer();
+          $('btn-candidates').disabled = false;
+          $('btn-jobs').disabled = false;
+        }
+      } catch (e) {
+        $('error-msg').textContent = 'Network error: ' + e.message;
+        $('error-msg').style.display = 'block';
       }
     }
 
     async function startSync(path) {
-      document.getElementById('btn-candidates').disabled = true;
-      document.getElementById('btn-jobs').disabled = true;
-      document.getElementById('out').textContent = '—';
-      document.getElementById('err').textContent = '—';
-      setBadge(document.getElementById('status'), 'starting');
+      $('btn-candidates').disabled = true;
+      $('btn-jobs').disabled = true;
+      $('out').textContent = '';
+      $('err').textContent = '';
+      $('error-msg').style.display = 'none';
+      $('exit-code').textContent = '--';
+      $('started-at').textContent = '--';
+      $('finished-at').textContent = '--';
+      setBadge($('status'), 'starting');
 
-      const r = await fetch(path, { method: 'POST' });
-      const j = await r.json().catch(() => ({}));
-      if (r.status !== 202 || !j.sync_id) {
-        document.getElementById('meta').textContent = 'POST failed: ' + r.status + ' ' + (j.message || JSON.stringify(j));
-        setBadge(document.getElementById('status'), 'failed');
-        document.getElementById('btn-candidates').disabled = false;
-        document.getElementById('btn-jobs').disabled = false;
-        return;
+      startElapsedTimer();
+
+      try {
+        const r = await fetch(path, { method: 'POST' });
+        const j = await r.json().catch(() => ({}));
+        if (r.status !== 202 || !j.sync_id) {
+          setBadge($('status'), 'failed');
+          stopElapsedTimer();
+          $('error-msg').textContent = 'POST failed: HTTP ' + r.status + ' — ' + (j.message || JSON.stringify(j));
+          $('error-msg').style.display = 'block';
+          $('btn-candidates').disabled = false;
+          $('btn-jobs').disabled = false;
+          return;
+        }
+
+        const syncId = j.sync_id;
+        $('sync-id').textContent = syncId;
+
+        if (pollTimer) clearInterval(pollTimer);
+        await pollStatus(syncId);
+        pollTimer = setInterval(() => pollStatus(syncId), POLL_MS);
+      } catch (e) {
+        setBadge($('status'), 'failed');
+        stopElapsedTimer();
+        $('error-msg').textContent = 'Request failed: ' + e.message;
+        $('error-msg').style.display = 'block';
+        $('btn-candidates').disabled = false;
+        $('btn-jobs').disabled = false;
       }
-      const syncId = j.sync_id;
-      document.getElementById('sync-id').textContent = syncId;
-      document.getElementById('meta').textContent = 'Polling ' + (j.status_path || '/api/index/sync/status/...');
-
-      if (pollTimer) clearInterval(pollTimer);
-      await pollStatus(syncId);
-      pollTimer = setInterval(() => pollStatus(syncId), POLL_MS);
     }
 
-    document.getElementById('btn-candidates').addEventListener('click', () => startSync('/api/index/candidates/sync'));
-    document.getElementById('btn-jobs').addEventListener('click', () => startSync('/api/index/jobs/sync'));
+    $('btn-candidates').addEventListener('click', () => startSync('/api/index/candidates/sync'));
+    $('btn-jobs').addEventListener('click', () => startSync('/api/index/jobs/sync'));
   </script>
 </body>
 </html>
