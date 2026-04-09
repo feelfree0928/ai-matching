@@ -4,7 +4,7 @@ Bulk index helpers for candidates and job postings.
 from __future__ import annotations
 
 import warnings
-from typing import Any, Iterator
+from typing import Any, Iterator, Literal
 
 from elasticsearch import Elasticsearch, helpers
 from elasticsearch.exceptions import NotFoundError
@@ -97,29 +97,61 @@ def get_max_post_modified(es: Elasticsearch, index: str) -> str | None:
         return None
 
 
+def _bulk_delete_outcome(item: dict[str, Any]) -> Literal["deleted", "not_found", "error"]:
+    """Classify a bulk delete line: removed from index, already absent, or real failure."""
+    if not isinstance(item, dict):
+        return "error"
+    op = item.get("delete")
+    if not isinstance(op, dict):
+        return "error"
+    status = op.get("status")
+    result = op.get("result")
+    if result == "not_found" or status == 404:
+        return "not_found"
+    if result == "deleted":
+        return "deleted"
+    if status is not None and 200 <= int(status) < 300:
+        return "deleted"
+    err = op.get("error")
+    if isinstance(err, dict):
+        et = (err.get("type") or "").lower()
+        if et == "document_missing_exception":
+            return "not_found"
+    return "error"
+
+
 def bulk_delete_by_ids(
     es: Elasticsearch,
     index: str,
     doc_ids: list[str],
-) -> tuple[int, int]:
-    """Delete documents by _id from an ES index. Returns (deleted_count, error_count)."""
+) -> tuple[int, int, int]:
+    """Delete documents by _id from an ES index.
+
+    Returns (deleted_count, already_absent_count, error_count).
+    Missing documents count as *already_absent* (idempotent cleanup), not errors.
+    """
     if not doc_ids:
-        return 0, 0
+        return 0, 0, 0
 
     def gen() -> Iterator[dict]:
         for doc_id in doc_ids:
             yield {"_op_type": "delete", "_index": index, "_id": doc_id}
 
     deleted = 0
+    already_absent = 0
     errors = 0
     for ok, item in helpers.streaming_bulk(
         es, gen(), chunk_size=500, raise_on_error=False, raise_on_exception=False,
     ):
-        if ok:
+        # Do not trust *ok* alone: ES reports missing docs as failures with 404 / document_missing_exception.
+        outcome = _bulk_delete_outcome(item) if isinstance(item, dict) else "error"
+        if outcome == "deleted":
             deleted += 1
+        elif outcome == "not_found":
+            already_absent += 1
         else:
             errors += 1
-    return deleted, errors
+    return deleted, already_absent, errors
 
 
 def _sanitize_post_modified(val: Any) -> str | None:
